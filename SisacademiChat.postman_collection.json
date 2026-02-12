@@ -1,0 +1,139 @@
+{
+	"info": {
+		"name": "SisacademiChat API v1 (Cliente)",
+		"description": "Cliente chatbot educativo RAG local y portable.\n\nFlujo tipico:\n1. Health check\n2. Sincronizar KB desde servidor: POST /sync/knowledge\n3. POST /chat para hacer preguntas (JSON) o POST /chat/stream (SSE)\n\nRequiere: Ollama + modelo LLM corriendo localmente.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{"key": "key", "value": "X-API-Key", "type": "string"},
+			{"key": "value", "value": "{{API_KEY}}", "type": "string"},
+			{"key": "in", "value": "header", "type": "string"}
+		]
+	},
+	"variable": [
+		{"key": "BASE_URL", "value": "http://127.0.0.1:8090"},
+		{"key": "API_KEY", "value": "uoemm2mEzkGwxVS_6T7WPvOdgwB5kyyHScOdssq-zfI"}
+	],
+	"item": [
+		{
+			"name": "1. Health & Stats",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"auth": {"type": "noauth"},
+						"method": "GET",
+						"header": [],
+						"url": {"raw": "{{BASE_URL}}/api/v1/health", "host": ["{{BASE_URL}}"], "path": ["api","v1","health"]},
+						"description": "Verifica estado del servicio. No requiere API Key.\nRetorna: estado de Ollama, modelo, chunks, fuentes."
+					}
+				},
+				{
+					"name": "Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {"raw": "{{BASE_URL}}/api/v1/stats", "host": ["{{BASE_URL}}"], "path": ["api","v1","stats"]},
+						"description": "Estadisticas generales: fuentes, chunks, queries totales, logs pendientes de sync, device_id."
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Chat",
+			"item": [
+				{
+					"name": "Chat (respuesta completa JSON)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Que es la fotosintesis?\",\n    \"top_k\": 5\n}",
+							"options": {"raw": {"language": "json"}}
+						},
+						"url": {"raw": "{{BASE_URL}}/api/v1/chat", "host": ["{{BASE_URL}}"], "path": ["api","v1","chat"]},
+						"description": "Envia una pregunta y recibe la respuesta completa en JSON.\nEl LLM genera la respuesta basandose en la base de conocimiento local.\nChunks con score < MIN_RELEVANCE_SCORE (default 0.25) se filtran.\n\nRespuesta:\n{\n  \"answer\": \"La fotosintesis es...\",\n  \"sources\": [{\"source_name\": \"biologia.pdf\", \"page_number\": 5, \"score\": 0.87}],\n  \"conversation_id\": \"uuid\",\n  \"tokens_in\": 512,\n  \"tokens_out\": 256,\n  \"latency_ms\": 3200\n}"
+					}
+				},
+				{
+					"name": "Chat con conversation_id",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Explicame la mitosis paso a paso\",\n    \"conversation_id\": \"sesion-alumno-001\",\n    \"top_k\": 3\n}",
+							"options": {"raw": {"language": "json"}}
+						},
+						"url": {"raw": "{{BASE_URL}}/api/v1/chat", "host": ["{{BASE_URL}}"], "path": ["api","v1","chat"]},
+						"description": "Chat con conversation_id para agrupar logs de una misma sesion de estudio.\nRetorna respuesta JSON completa."
+					}
+				},
+				{
+					"name": "Chat Streaming (SSE)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Que es la fotosintesis?\",\n    \"top_k\": 5\n}",
+							"options": {"raw": {"language": "json"}}
+						},
+						"url": {"raw": "{{BASE_URL}}/api/v1/chat/stream", "host": ["{{BASE_URL}}"], "path": ["api","v1","chat","stream"]},
+						"description": "Envia una pregunta. Respuesta en streaming SSE (Server-Sent Events).\nUtil para integraciones que necesiten mostrar la respuesta token a token.\n\nEventos:\n- {\"type\": \"sources\", \"sources\": [...]}\n- {\"type\": \"token\", \"content\": \"...\"}\n- {\"type\": \"done\", \"tokens_in\": N, \"tokens_out\": N, \"latency_ms\": N}\n- {\"type\": \"error\", \"error\": \"...\"}"
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Fuentes (solo lectura)",
+			"item": [
+				{
+					"name": "Listar fuentes",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {"raw": "{{BASE_URL}}/api/v1/sources", "host": ["{{BASE_URL}}"], "path": ["api","v1","sources"]},
+						"description": "Lista todas las fuentes de conocimiento con cantidad de chunks.\nEl cliente es solo lectura; para agregar/eliminar fuentes usar el servidor."
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Sincronizacion",
+			"description": "Sincronizacion con el servidor central (SisacademiServer).\nRequiere SERVER_URL configurado en config.env.",
+			"item": [
+				{
+					"name": "Descargar Knowledge Base",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {"raw": "{{BASE_URL}}/api/v1/sync/knowledge", "host": ["{{BASE_URL}}"], "path": ["api","v1","sync","knowledge"]},
+						"description": "Descarga knowledge.db desde el servidor central (SERVER_URL en config.env).\n\nProceso:\n1. Descarga desde SERVER_URL/api/v1/knowledge/download\n2. Valida que sea SQLite con tablas chunks y sources\n3. Crea backup del actual (knowledge.db.bak)\n4. Reemplaza con el nuevo\n5. Re-inicializa la DB\n\nRequiere: SERVER_URL configurado en config.env."
+					}
+				},
+				{
+					"name": "Sincronizar logs",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {"raw": "{{BASE_URL}}/api/v1/sync/logs", "host": ["{{BASE_URL}}"], "path": ["api","v1","sync","logs"]},
+						"description": "Envia logs de uso pendientes al servidor central.\nLos logs se envian en batches de 100 con device_id del cliente.\nRequiere: SERVER_URL configurado en config.env."
+					}
+				},
+				{
+					"name": "Estado de sincronizacion",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {"raw": "{{BASE_URL}}/api/v1/sync/status", "host": ["{{BASE_URL}}"], "path": ["api","v1","sync","status"]},
+						"description": "Muestra cuantos logs estan pendientes y resultado de la ultima sync."
+					}
+				}
+			]
+		}
+	]
+}

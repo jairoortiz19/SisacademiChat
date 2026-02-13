@@ -51,11 +51,11 @@
 						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"message\": \"Que es la fotosintesis?\",\n    \"top_k\": 5\n}",
+							"raw": "{\n    \"message\": \"Que es la fotosintesis?\",\n    \"top_k\": 3\n}",
 							"options": {"raw": {"language": "json"}}
 						},
 						"url": {"raw": "{{BASE_URL}}/api/v1/chat", "host": ["{{BASE_URL}}"], "path": ["api","v1","chat"]},
-						"description": "Envia una pregunta y recibe la respuesta completa en JSON.\nEl LLM genera la respuesta basandose en la base de conocimiento local.\nChunks con score < MIN_RELEVANCE_SCORE (default 0.25) se filtran.\n\nRespuesta:\n{\n  \"answer\": \"La fotosintesis es...\",\n  \"sources\": [{\"source_name\": \"biologia.pdf\", \"page_number\": 5, \"score\": 0.87}],\n  \"conversation_id\": \"uuid\",\n  \"tokens_in\": 512,\n  \"tokens_out\": 256,\n  \"latency_ms\": 3200\n}"
+						"description": "Envia una pregunta y recibe la respuesta completa en JSON.\nEl LLM genera la respuesta basandose en la base de conocimiento local.\n\nParametros del body:\n- message (string, requerido): La pregunta del estudiante\n- top_k (int, opcional, default 3): Cantidad de fragmentos a recuperar\n- conversation_id (string, opcional): ID para agrupar logs de una sesion\n\nChunks con score < MIN_RELEVANCE_SCORE (default 0.25) se filtran.\nCada chunk se trunca a MAX_CHUNK_LENGTH (default 500) caracteres.\n\nOpciones de Ollama configurables en config.env:\n- OLLAMA_NUM_CTX=2048 (ventana de contexto)\n- OLLAMA_NUM_PREDICT=512 (max tokens de salida)\n- OLLAMA_TEMPERATURE=0.1 (temperatura de sampling)\n- OLLAMA_KEEP_ALIVE=30m (tiempo en RAM)\n\nRespuesta:\n{\n  \"answer\": \"La fotosintesis es...\",\n  \"sources\": [{\"source_name\": \"biologia.pdf\", \"page_number\": 5, \"score\": 0.87}],\n  \"conversation_id\": \"uuid\",\n  \"tokens_in\": 512,\n  \"tokens_out\": 256,\n  \"latency_ms\": 8500\n}"
 					}
 				},
 				{
@@ -79,11 +79,11 @@
 						"header": [{"key": "Content-Type", "value": "application/json"}],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"message\": \"Que es la fotosintesis?\",\n    \"top_k\": 5\n}",
+							"raw": "{\n    \"message\": \"Que es la fotosintesis?\",\n    \"top_k\": 3\n}",
 							"options": {"raw": {"language": "json"}}
 						},
 						"url": {"raw": "{{BASE_URL}}/api/v1/chat/stream", "host": ["{{BASE_URL}}"], "path": ["api","v1","chat","stream"]},
-						"description": "Envia una pregunta. Respuesta en streaming SSE (Server-Sent Events).\nUtil para integraciones que necesiten mostrar la respuesta token a token.\n\nEventos:\n- {\"type\": \"sources\", \"sources\": [...]}\n- {\"type\": \"token\", \"content\": \"...\"}\n- {\"type\": \"done\", \"tokens_in\": N, \"tokens_out\": N, \"latency_ms\": N}\n- {\"type\": \"error\", \"error\": \"...\"}"
+						"description": "Envia una pregunta. Respuesta en streaming SSE (Server-Sent Events).\nUtil para integraciones que necesiten mostrar la respuesta token a token.\n\nParametros del body: mismos que POST /chat.\n\nEventos:\n- {\"type\": \"sources\", \"sources\": [...]}\n- {\"type\": \"token\", \"content\": \"...\"}\n- {\"type\": \"done\", \"tokens_in\": N, \"tokens_out\": N, \"latency_ms\": N}\n- {\"type\": \"error\", \"error\": \"...\"}"
 					}
 				}
 			]

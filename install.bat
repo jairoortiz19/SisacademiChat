@@ -1,5 +1,6 @@
 @echo off
 title SisacademiChat - Instalador
+setlocal enabledelayedexpansion
 
 REM Ir al directorio donde esta el .bat
 cd /d "%~dp0"
@@ -16,6 +17,7 @@ set "PYTHON_VERSION=3.12.8"
 set "PYTHON_ZIP=python-%PYTHON_VERSION%-embed-amd64.zip"
 set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VERSION%/%PYTHON_ZIP%"
 set "OLLAMA_MODEL=qwen2.5:3b"
+set "MAX_RETRIES=3"
 
 REM ==========================================
 REM  1. Verificar/instalar Ollama
@@ -28,15 +30,36 @@ if %errorlevel% equ 0 (
 )
 
 echo   Ollama no encontrado. Descargando...
+set "RETRY=0"
+:retry_ollama_download
 curl -L -o OllamaSetup.exe https://ollama.com/download/OllamaSetup.exe
 if %errorlevel% neq 0 (
-    echo   ERROR: No se pudo descargar Ollama.
+    set /a RETRY+=1
+    if !RETRY! lss %MAX_RETRIES% (
+        echo   Reintentando descarga de Ollama [!RETRY!/%MAX_RETRIES%]...
+        timeout /t 5 /nobreak >nul
+        goto :retry_ollama_download
+    )
+    echo   ERROR: No se pudo descargar Ollama tras %MAX_RETRIES% intentos.
     echo   Verifica tu conexion a internet.
     goto :error_exit
 )
 echo   Instalando Ollama (esto puede tardar)...
 start /wait OllamaSetup.exe /VERYSILENT /NORESTART
 del OllamaSetup.exe 2>nul
+
+REM Verificar que se instalo
+where ollama >nul 2>&1
+if %errorlevel% neq 0 (
+    REM Agregar ruta comun de Ollama al PATH de sesion
+    set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Ollama"
+    where ollama >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo   ERROR: Ollama se instalo pero no se encuentra en el PATH.
+        echo   Reinicia el equipo e intenta de nuevo.
+        goto :error_exit
+    )
+)
 echo   Ollama instalado correctamente.
 
 REM ==========================================
@@ -46,20 +69,46 @@ REM ==========================================
 echo.
 echo [2/5] Configurando modelo LLM (%OLLAMA_MODEL%)...
 
+REM Intentar conectar a Ollama con reintentos
+set "OLLAMA_READY=0"
+set "RETRY=0"
+:retry_ollama_start
 curl -s http://localhost:11434/api/tags >nul 2>&1
-if %errorlevel% neq 0 (
+if %errorlevel% equ 0 (
+    set "OLLAMA_READY=1"
+    goto :ollama_ready
+)
+if !RETRY! equ 0 (
     echo   Iniciando Ollama...
     start "" ollama serve
-    echo   Esperando que Ollama inicie...
-    timeout /t 8 /nobreak >nul
 )
+set /a RETRY+=1
+if !RETRY! lss 6 (
+    echo   Esperando que Ollama inicie [!RETRY!/5]...
+    timeout /t 5 /nobreak >nul
+    goto :retry_ollama_start
+)
+echo   ADVERTENCIA: Ollama no respondio. Se intentara al iniciar el servicio.
 
-echo   Descargando modelo %OLLAMA_MODEL%...
-echo   (Esto puede tardar varios minutos la primera vez)
-ollama pull %OLLAMA_MODEL%
-if %errorlevel% neq 0 (
-    echo   ADVERTENCIA: No se pudo descargar el modelo.
-    echo   Se intentara descargar cuando uses el chatbot.
+:ollama_ready
+if "%OLLAMA_READY%"=="1" (
+    echo   Descargando modelo %OLLAMA_MODEL%...
+    echo   (Esto puede tardar varios minutos la primera vez^)
+    set "RETRY=0"
+    :retry_model_pull
+    ollama pull %OLLAMA_MODEL%
+    if !errorlevel! neq 0 (
+        set /a RETRY+=1
+        if !RETRY! lss %MAX_RETRIES% (
+            echo   Reintentando descarga del modelo [!RETRY!/%MAX_RETRIES%]...
+            timeout /t 5 /nobreak >nul
+            goto :retry_model_pull
+        )
+        echo   ADVERTENCIA: No se pudo descargar el modelo tras %MAX_RETRIES% intentos.
+        echo   Se intentara descargar cuando uses el chatbot.
+    ) else (
+        echo   Modelo %OLLAMA_MODEL% listo.
+    )
 )
 
 REM ==========================================
@@ -73,16 +122,35 @@ if exist "%PYTHON_EXE%" (
 )
 
 echo   Descargando Python %PYTHON_VERSION% embeddable...
+set "RETRY=0"
+:retry_python_download
 curl -L -o "%PYTHON_ZIP%" "%PYTHON_URL%"
 if %errorlevel% neq 0 (
-    echo   ERROR: No se pudo descargar Python.
+    set /a RETRY+=1
+    if !RETRY! lss %MAX_RETRIES% (
+        echo   Reintentando descarga de Python [!RETRY!/%MAX_RETRIES%]...
+        timeout /t 5 /nobreak >nul
+        goto :retry_python_download
+    )
+    echo   ERROR: No se pudo descargar Python tras %MAX_RETRIES% intentos.
     goto :error_exit
 )
 
 echo   Extrayendo Python...
 if not exist "%PYTHON_DIR%" mkdir "%PYTHON_DIR%"
 tar -xf "%PYTHON_ZIP%" -C "%PYTHON_DIR%"
+if %errorlevel% neq 0 (
+    echo   ERROR: No se pudo extraer Python. Archivo corrupto?
+    del "%PYTHON_ZIP%" 2>nul
+    goto :error_exit
+)
 del "%PYTHON_ZIP%"
+
+REM Verificar que se extrajo correctamente
+if not exist "%PYTHON_EXE%" (
+    echo   ERROR: Python se extrajo pero python.exe no existe.
+    goto :error_exit
+)
 echo   Python extraido correctamente.
 
 REM Habilitar import site para pip
@@ -102,22 +170,43 @@ if %errorlevel% equ 0 (
 )
 
 echo   Instalando pip...
+set "RETRY=0"
+:retry_pip_download
 curl -L -o "%PYTHON_DIR%\get-pip.py" https://bootstrap.pypa.io/get-pip.py
 if %errorlevel% neq 0 (
-    echo   ERROR: No se pudo descargar get-pip.py.
+    set /a RETRY+=1
+    if !RETRY! lss %MAX_RETRIES% (
+        echo   Reintentando descarga de pip [!RETRY!/%MAX_RETRIES%]...
+        timeout /t 5 /nobreak >nul
+        goto :retry_pip_download
+    )
+    echo   ERROR: No se pudo descargar get-pip.py tras %MAX_RETRIES% intentos.
     goto :error_exit
 )
 "%PYTHON_EXE%" "%PYTHON_DIR%\get-pip.py" --no-warn-script-location
-del "%PYTHON_DIR%\get-pip.py"
+if %errorlevel% neq 0 (
+    echo   ERROR: Fallo la instalacion de pip.
+    del "%PYTHON_DIR%\get-pip.py" 2>nul
+    goto :error_exit
+)
+del "%PYTHON_DIR%\get-pip.py" 2>nul
 echo   pip instalado correctamente.
 
 :install_deps
 echo.
 echo   Instalando dependencias Python...
 echo   (Esto puede tardar unos minutos la primera vez)
+set "RETRY=0"
+:retry_deps
 "%PYTHON_EXE%" -m pip install -r requirements.txt --no-warn-script-location -q
 if %errorlevel% neq 0 (
-    echo   ERROR: Fallo la instalacion de dependencias.
+    set /a RETRY+=1
+    if !RETRY! lss %MAX_RETRIES% (
+        echo   Reintentando instalacion de dependencias [!RETRY!/%MAX_RETRIES%]...
+        timeout /t 3 /nobreak >nul
+        goto :retry_deps
+    )
+    echo   ERROR: Fallo la instalacion de dependencias tras %MAX_RETRIES% intentos.
     goto :error_exit
 )
 echo   Dependencias instaladas correctamente.
@@ -143,16 +232,26 @@ if %errorlevel% neq 0 (
     echo   ADVERTENCIA: El modelo se descargara al iniciar el servicio.
 )
 
+echo   Sincronizando Base de Conocimiento...
+"%PYTHON_EXE%" -c "import sys; sys.path.insert(0, '.'); import asyncio; from app.services.sync_service import sync_knowledge_base; result = asyncio.run(sync_knowledge_base()); print(f'  {result[\"message\"]}')"
+if %errorlevel% neq 0 (
+    echo   ADVERTENCIA: No se pudo sincronizar la KB. Se intentara al iniciar.
+)
+
 echo   Generando Device ID...
 "%PYTHON_EXE%" -c "import sys; sys.path.insert(0, '.'); from app.config import settings; print(f'  ID: {settings.DEVICE_ID}')"
+
+REM Leer puerto de config.env
+set "PORT=8090"
+for /f "tokens=2 delims==" %%a in ('findstr /i "^PORT=" config.env 2^>nul') do set "PORT=%%a"
 
 echo.
 echo ============================================
 echo   Instalacion completada exitosamente!
 echo.
 echo   Para iniciar: run.bat
-echo   Servicio en:  http://127.0.0.1:8090
-echo   API Docs:     http://127.0.0.1:8090/docs
+echo   Servicio en:  http://127.0.0.1:%PORT%
+echo   API Docs:     http://127.0.0.1:%PORT%/docs
 echo.
 echo   Configura SERVER_URL en config.env para
 echo   sincronizar con el servidor central.

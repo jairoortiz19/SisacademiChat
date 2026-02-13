@@ -50,6 +50,12 @@ class OllamaClient:
             "model": model or self.model,
             "messages": messages,
             "stream": True,
+            "keep_alive": settings.OLLAMA_KEEP_ALIVE,
+            "options": {
+                "num_ctx": settings.OLLAMA_NUM_CTX,
+                "num_predict": settings.OLLAMA_NUM_PREDICT,
+                "temperature": settings.OLLAMA_TEMPERATURE,
+            },
         }
 
         try:

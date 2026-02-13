@@ -28,6 +28,7 @@ def _build_context(chunks: list[dict]) -> str:
     if not chunks:
         return "No se encontro informacion relevante en los materiales de estudio."
 
+    max_len = settings.MAX_CHUNK_LENGTH
     parts = []
     for i, chunk in enumerate(chunks, 1):
         header = f"[Fuente: {chunk['source_name']}"
@@ -36,7 +37,10 @@ def _build_context(chunks: list[dict]) -> str:
         if chunk.get("section"):
             header += f", Seccion: {chunk['section']}"
         header += "]"
-        parts.append(f"{header}\n{chunk['chunk_text']}")
+        text = chunk["chunk_text"]
+        if len(text) > max_len:
+            text = text[:max_len] + "..."
+        parts.append(f"{header}\n{text}")
 
     return "\n\n---\n\n".join(parts)
 

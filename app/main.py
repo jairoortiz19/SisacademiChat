@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import init_all
 from app.infrastructure import embedder
 from app.services.llm_client import ollama_client
-from app.routers import chat, sources, health, sync
+from app.routers import chat, sources, health, sync, professor
 from app.repositories import vector_store, log_store
 from app.models import StatsResponse
 from app.security import verify_api_key
@@ -83,9 +83,73 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SisacademiChat",
-    description="Chatbot educativo RAG - Cliente local",
-    version="1.0.0",
+    description="""
+**SisacademiChat** es el cliente local inteligente de la plataforma educativa Sisacademi.
+Combina un chatbot con IA (LLM local via Ollama) y un panel completo de analitica academica
+para profesores — todo funcionando **100% offline** despues de la primera sincronizacion.
+
+---
+
+## Arquitectura
+
+```
+SisacademiServer (nube)            SisacademiChat (local)
+  Procesa PDFs, Excel       -->      Descarga knowledge.db
+  Genera embeddings          |       (chunks + vectores + estudiantes + calificaciones)
+  Recibe sync academico      |
+                             |       Estudiante pregunta --> LLM local (Ollama)
+                             |       Profesor consulta   --> Analytics offline
+                             |
+  Recibe logs de uso        <--      Envia logs cuando hay internet
+```
+
+---
+
+## Modulos
+
+| Modulo | Descripcion |
+|--------|-------------|
+| **Chat IA** | Chatbot RAG con modelo local (Ollama). Busca en la base de conocimiento por significado y genera respuestas contextualizadas. |
+| **Panel del Profesor** | Dashboard, estadisticas por materia/grupo, plan de mejora, prediccion de rendimiento (regresion lineal), comparacion entre grupos. **Todo offline.** |
+| **Sincronizacion** | Descarga knowledge.db del servidor central (incluye material de estudio + datos academicos). Envia logs de uso cuando hay conexion. |
+
+---
+
+## Flujo de uso
+
+1. **Sincronizar** (cuando hay internet): `POST /sync/knowledge` descarga la BD actualizada del servidor.
+2. **Estudiante usa el chat** (offline): `POST /chat` recibe respuestas del LLM local con contexto de la base de conocimiento.
+3. **Profesor consulta analytics** (offline): Los endpoints `/professor/*` leen directamente de la BD local.
+4. **Enviar logs** (cuando hay internet): `POST /sync/logs` envia registros de uso al servidor para analisis.
+    """,
+    version="1.1.0",
     lifespan=lifespan,
+    openapi_tags=[
+        {
+            "name": "Chat",
+            "description": "Chatbot con IA local (Ollama + RAG). Genera respuestas usando busqueda semantica en la base de conocimiento.",
+        },
+        {
+            "name": "Profesor",
+            "description": "**Panel completo para el profesor.** Dashboard, calificaciones, estadisticas por materia/grupo, plan de mejora personalizado, prediccion de rendimiento y comparacion entre grupos. Funciona 100% offline.",
+        },
+        {
+            "name": "Sync",
+            "description": "Sincronizacion con el servidor central. Descarga knowledge.db (material + datos academicos) y envia logs de uso.",
+        },
+        {
+            "name": "Sources",
+            "description": "Consulta las fuentes de conocimiento disponibles (documentos procesados).",
+        },
+        {
+            "name": "Health",
+            "description": "Health check del servicio.",
+        },
+        {
+            "name": "Stats",
+            "description": "Estadisticas generales del servicio local.",
+        },
+    ],
 )
 
 # --- CORS ---
@@ -102,6 +166,7 @@ app.include_router(chat.router, prefix=PREFIX)
 app.include_router(sources.router, prefix=PREFIX)
 app.include_router(health.router, prefix=PREFIX)
 app.include_router(sync.router, prefix=PREFIX)
+app.include_router(professor.router, prefix=PREFIX)
 
 
 # --- Stats endpoint ---

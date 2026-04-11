@@ -39,6 +39,10 @@ class Settings:
     EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     EMBEDDING_DIM: int = 384
 
+    # Cache de respuestas RAG
+    QUERY_CACHE_TTL: int = int(os.getenv("QUERY_CACHE_TTL", "3600"))      # segundos (1 hora)
+    QUERY_CACHE_MAX_SIZE: int = int(os.getenv("QUERY_CACHE_MAX_SIZE", "200"))  # max entradas
+
     # Servidor central
     SERVER_URL: str = os.getenv("SERVER_URL", "")
     SERVER_API_KEY: str = os.getenv("SERVER_API_KEY", "")

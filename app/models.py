@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=500)
     conversation_id: Optional[str] = None
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: Optional[int] = Field(default=None, ge=1, le=20)  # None = usar TOP_K de config.env
 
 
 class SourceRef(BaseModel):

@@ -37,10 +37,10 @@ async def lifespan(app: FastAPI):
     logger.info("Cargando modelo de embeddings (primera vez puede descargar ~46MB)...")
     embedder.warmup()
 
-    # Verificar Ollama
-    if await ollama_client.is_available():
-        has_model = await ollama_client.has_model()
-        if has_model:
+    # Verificar Ollama (una sola llamada HTTP)
+    ollama_available, ollama_has_model = await ollama_client.check_status()
+    if ollama_available:
+        if ollama_has_model:
             logger.info("Ollama conectado con modelo '%s'", settings.OLLAMA_MODEL)
         else:
             logger.warning(

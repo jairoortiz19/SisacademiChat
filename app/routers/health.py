@@ -14,8 +14,7 @@ async def health_check():
     Health check del servicio. No requiere autenticacion.
     Verifica: Ollama conectado, modelo disponible, estado de DBs.
     """
-    ollama_ok = await ollama_client.is_available()
-    model_ok = await ollama_client.has_model() if ollama_ok else False
+    ollama_ok, model_ok = await ollama_client.check_status()
 
     if ollama_ok and model_ok:
         ollama_status = "connected"

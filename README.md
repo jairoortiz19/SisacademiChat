@@ -8,12 +8,14 @@ El sistema utiliza modelos locales (**Ollama**) para privacidad y eficiencia, y 
 
 * **Chat Educativo Local**: Respuestas generadas localmente usando LLMs (sin depender de internet para la inferencia).
 * **RAG (Retrieval-Augmented Generation)**: Respuestas basadas *unicamente* en documentos proporcionados (PDFs, guias, libros).
+* **Cache de Respuestas**: Preguntas repetidas se responden instantaneamente sin invocar el LLM.
+* **Alta Confiabilidad**: Retry automatico y circuit breaker para Ollama.
 * **Sincronizacion Inteligente**:
     * Descarga de bases de conocimiento gestionadas centralmente.
     * Subida de logs y metricas de uso anonimas.
 * **Stack Eficiente**: Python, FastAPI, SQLite (Vector Search), Ollama.
 * **Instalacion Automatica**: Scripts resilientes que descargan e instalan todo automaticamente.
-* **Optimizacion de Rendimiento**: Parametros configurables para reducir latencia de respuestas.
+* **Optimizado para Hardware Limitado**: Parametros configurables para reducir latencia y consumo de recursos.
 
 ## Requisitos Previos
 
@@ -121,6 +123,13 @@ Todas las opciones se configuran en `config.env`:
 | `MIN_RELEVANCE_SCORE` | `0.25` | Score minimo de relevancia para incluir un fragmento |
 | `MAX_CHUNK_LENGTH` | `500` | Longitud maxima de cada fragmento enviado al LLM |
 
+### Cache de Respuestas
+
+| Variable | Default | Descripcion |
+|---|---|---|
+| `QUERY_CACHE_TTL` | `3600` | Segundos que una respuesta permanece en cache (0 = desactivar) |
+| `QUERY_CACHE_MAX_SIZE` | `200` | Maximo de respuestas cacheadas en memoria |
+
 ### Servidor Central
 
 | Variable | Default | Descripcion |
@@ -129,6 +138,18 @@ Todas las opciones se configuran en `config.env`:
 | `SERVER_API_KEY` | (vacio) | API Key del servidor central |
 | `DEVICE_ID` | (auto-generado) | Identificador unico del dispositivo |
 
+### Configuracion recomendada para hardware limitado
+
+Si el equipo tiene poca RAM o CPU lenta, ajustar en `config.env`:
+
+```env
+OLLAMA_NUM_CTX=1024       # Reduce uso de RAM del modelo
+OLLAMA_NUM_PREDICT=256    # Respuestas mas cortas y rapidas
+TOP_K=2                   # Menos fragmentos comparados
+MAX_CHUNK_LENGTH=300      # Menos tokens enviados al LLM
+OLLAMA_KEEP_ALIVE=5m      # Libera RAM antes
+```
+
 ## Arquitectura
 
 ```
@@ -136,7 +157,7 @@ HTTP Requests
     |
 [Routers] - FastAPI (auth, validacion, rate limiting)
     |
-[Services] - Logica de negocio (RAG pipeline, sync)
+[Services] - Logica de negocio (RAG pipeline, cache, sync)
     |
 [Repositories] - Acceso a datos (vector search, logs)
     |
@@ -148,10 +169,31 @@ HTTP Requests
 ### Pipeline RAG
 
 ```
-Pregunta --> Sanitizacion --> Embedding (384d) --> Busqueda vectorial (top_k)
-    --> Filtrado por relevancia --> Truncado de chunks --> Contexto al LLM
-    --> Respuesta en espanol --> Log de uso
+Pregunta --> Sanitizacion --> Cache hit? --> Respuesta instantanea
+                                  |
+                               Cache miss
+                                  |
+                   Embedding (384d, asyncio.to_thread)
+                                  |
+                     Busqueda vectorial (top_k)
+                                  |
+                   Filtrado por relevancia
+                                  |
+              Sin chunks? --> Respuesta directa (sin LLM)
+                                  |
+                         Contexto al LLM (Ollama)
+                         [retry + circuit breaker]
+                                  |
+                    Respuesta en espanol (streaming)
+                                  |
+                    Log en background + Guardar en cache
 ```
+
+### Confiabilidad
+
+* **Retry automatico**: Si Ollama no responde, reintenta hasta 2 veces (esperas de 1s y 2s).
+* **Circuit breaker**: Tras 3 fallos consecutivos, falla rapido por 30 segundos en lugar de esperar el timeout completo.
+* **Timeout reducido**: Conexion a Ollama con timeout de 5s (no 10s).
 
 ### Estructura de directorios
 
@@ -160,17 +202,18 @@ SisacademiChat/
 ├── app/
 │   ├── main.py              # Entry point FastAPI
 │   ├── config.py             # Settings desde config.env
-│   ├── database.py           # SQLite (conexion persistente + sqlite-vec)
+│   ├── database.py           # SQLite (conexion persistente + sqlite-vec + PRAGMAs)
 │   ├── models.py             # Modelos Pydantic
 │   ├── security.py           # API key, rate limiting, sanitizacion
 │   ├── infrastructure/
-│   │   └── embedder.py       # Modelo de embeddings (FastEmbed)
+│   │   └── embedder.py       # Modelo de embeddings (FastEmbed, async)
 │   ├── repositories/
 │   │   ├── vector_store.py   # Busqueda vectorial
-│   │   └── log_store.py      # Logs de uso
+│   │   └── log_store.py      # Logs de uso (conexion persistente)
 │   ├── services/
-│   │   ├── rag_engine.py     # Pipeline RAG completo
-│   │   ├── llm_client.py     # Cliente Ollama (streaming)
+│   │   ├── rag_engine.py     # Pipeline RAG completo (con cache y early exit)
+│   │   ├── llm_client.py     # Cliente Ollama (streaming, retry, circuit breaker)
+│   │   ├── query_cache.py    # Cache TTL de respuestas RAG
 │   │   └── sync_service.py   # Sincronizacion con servidor central
 │   └── routers/
 │       ├── chat.py           # POST /chat, POST /chat/stream
@@ -210,7 +253,7 @@ Base URL: `http://127.0.0.1:8090/api/v1`
 curl -X POST http://127.0.0.1:8090/api/v1/chat \
   -H "X-API-Key: tu-api-key" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Que es la fotosintesis?", "top_k": 3}'
+  -d '{"message": "Que es la fotosintesis?"}'
 ```
 
 Respuesta:

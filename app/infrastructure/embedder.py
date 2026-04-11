@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional
 
@@ -21,18 +22,15 @@ def _get_model() -> TextEmbedding:
 
 
 def embed_query(text: str) -> list[float]:
-    """
-    Genera el embedding de una consulta de usuario.
-
-    Args:
-        text: Texto de la consulta.
-
-    Returns:
-        Vector de 384 dimensiones.
-    """
+    """Genera el embedding de una consulta (sincrono)."""
     model = _get_model()
     embeddings = list(model.embed([text]))
     return embeddings[0].tolist()
+
+
+async def embed_query_async(text: str) -> list[float]:
+    """Genera el embedding sin bloquear el event loop de FastAPI."""
+    return await asyncio.to_thread(embed_query, text)
 
 
 def warmup():

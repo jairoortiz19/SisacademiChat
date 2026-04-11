@@ -41,10 +41,13 @@ class RateLimiter:
         now = time.time()
         cutoff = now - self.window
 
-        # Limpiar timestamps viejos
-        self._requests[client_ip] = [
-            t for t in self._requests[client_ip] if t > cutoff
-        ]
+        # Limpiar timestamps viejos y eliminar IPs sin actividad (evita memory leak)
+        recent = [t for t in self._requests[client_ip] if t > cutoff]
+        if recent:
+            self._requests[client_ip] = recent
+        else:
+            self._requests.pop(client_ip, None)
+            self._requests[client_ip] = []
 
         if len(self._requests[client_ip]) >= self.max_requests:
             return False

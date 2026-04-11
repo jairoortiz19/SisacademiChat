@@ -59,6 +59,8 @@ def list_sources() -> list[dict]:
 def get_stats() -> dict:
     """Retorna estadisticas generales de la base de conocimiento."""
     conn = get_knowledge_db()
-    total_chunks = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-    total_sources = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
-    return {"total_chunks": total_chunks, "total_sources": total_sources}
+    row = conn.execute(
+        "SELECT (SELECT COUNT(*) FROM chunks) AS total_chunks, "
+        "(SELECT COUNT(*) FROM sources) AS total_sources"
+    ).fetchone()
+    return {"total_chunks": row["total_chunks"], "total_sources": row["total_sources"]}

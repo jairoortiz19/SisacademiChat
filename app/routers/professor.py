@@ -12,6 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.config import settings
 from app.repositories import knowledge_reader
 from app.services.llm_client import ollama_client
 
@@ -554,14 +555,14 @@ Firma del estudiante/tutor"""
 
 
 async def _generate_with_llm(prompt_data: dict) -> str:
-    """Genera texto usando Ollama a partir de un system/user prompt."""
+    """Genera texto usando el modelo inteligente (OLLAMA_MODEL_SMART)."""
     messages = [
         {"role": "system", "content": prompt_data["system"]},
         {"role": "user", "content": prompt_data["user"]},
     ]
 
     full_response = []
-    async for token, stats in ollama_client.stream_chat(messages):
+    async for token, stats in ollama_client.stream_chat(messages, model=settings.OLLAMA_MODEL_SMART):
         if token:
             full_response.append(token)
 

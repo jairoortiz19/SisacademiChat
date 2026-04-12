@@ -166,7 +166,7 @@ async def query(
     stats = LLMStats()
 
     try:
-        async for token, token_stats in ollama_client.stream_chat(messages):
+        async for token, token_stats in ollama_client.stream_chat(messages, model=settings.OLLAMA_MODEL_FAST):
             if token_stats:
                 stats = token_stats
             if token:

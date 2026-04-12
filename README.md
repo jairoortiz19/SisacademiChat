@@ -25,22 +25,25 @@ El sistema utiliza modelos locales (**Ollama**) para privacidad y eficiencia, y 
 
 ## Instalacion
 
-### Instalacion automatica (recomendada)
+### Inicio (primera vez y siguientes)
 
 ```bash
 git clone https://github.com/jairoortiz19/SisacademiChat.git
 cd SisacademiChat
-install.bat
+run.bat
 ```
 
-El instalador se encarga de todo automaticamente:
-1. Descarga e instala **Ollama** si no esta presente
-2. Descarga el modelo LLM (`qwen2.5:3b`)
+`run.bat` es el unico script necesario. Detecta automaticamente que falta y lo instala:
+
+1. Instala **Ollama** si no esta presente
+2. Inicia Ollama y descarga el modelo LLM (`qwen2.5:3b`)
 3. Descarga **Python 3.12 embebido** (portable, no requiere instalacion en el sistema)
 4. Instala **pip** y todas las dependencias
-5. Inicializa las bases de datos SQLite
-6. Descarga el modelo de embeddings (~46MB)
-7. Sincroniza la base de conocimiento desde el servidor central
+5. Inicializa las bases de datos SQLite y el modelo de embeddings (~46MB)
+6. Sincroniza la base de conocimiento desde el servidor central
+7. Inicia el servicio
+
+La segunda vez en adelante los pasos 1-5 se saltan automaticamente (todo ya esta instalado). El arranque tarda solo unos segundos.
 
 Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si algo falla, el script informa el error y sugiere solucion.
 
@@ -53,6 +56,7 @@ Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si alg
     pip install -r requirements.txt
     ```
 4. Copiar `config.env.example` a `config.env` y ajustar valores.
+5. Iniciar: `uvicorn app.main:app --host 127.0.0.1 --port 8090`
 
 ## Ejecucion
 
@@ -60,21 +64,15 @@ Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si alg
 
 | Script | Descripcion |
 |---|---|
-| `install.bat` | Instalacion completa con reintentos automaticos |
-| `run.bat` | Inicia el servicio (auto-instala si es necesario) |
+| `run.bat` | Instala lo que falta e inicia el servicio |
 | `stop.bat` | Detiene el servicio de forma segura |
 
-### Ejecucion manual
+### Manejo automatico de errores
 
-```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8090
-```
-
-### Manejo automatico de errores en run.bat
-
-* **Python no instalado**: Ejecuta `install.bat` automaticamente
-* **Dependencias faltantes**: Reinstala `requirements.txt` automaticamente
-* **Ollama no corriendo**: Lo inicia automaticamente con reintentos (5 intentos x 5s)
+* **Ollama no instalado**: Lo descarga e instala automaticamente
+* **Ollama no corriendo**: Lo inicia automaticamente (5 reintentos x 5s)
+* **Modelo LLM no descargado**: Ejecuta `ollama pull` automaticamente
+* **Python/dependencias faltantes**: Los instala automaticamente
 * **Puerto ocupado**: Ofrece 3 opciones:
     1. Cerrar el proceso anterior y reusar el puerto
     2. Buscar un puerto libre automaticamente (+1 a +20)
@@ -227,8 +225,7 @@ SisacademiChat/
 ├── config.env                # Configuracion local
 ├── config.env.example        # Plantilla de configuracion
 ├── requirements.txt          # Dependencias Python
-├── install.bat               # Instalador automatico
-├── run.bat                   # Inicio del servicio
+├── run.bat                   # Instala lo que falta e inicia el servicio
 └── stop.bat                  # Detencion del servicio
 ```
 
@@ -281,7 +278,7 @@ Documentacion interactiva disponible en: `http://127.0.0.1:8090/docs`
 | Respuestas lentas | Reduce `TOP_K`, `OLLAMA_NUM_CTX` o `MAX_CHUNK_LENGTH` en `config.env` |
 | Respuestas cortadas | Aumenta `OLLAMA_NUM_PREDICT` en `config.env` |
 | Respuestas no relevantes | Ajusta `MIN_RELEVANCE_SCORE` (mayor = mas estricto) |
-| ModuleNotFoundError | Ejecuta `install.bat` para reinstalar dependencias |
+| ModuleNotFoundError | Ejecuta `run.bat` — reinstala dependencias automaticamente |
 | Base de conocimiento vacia | Configura `SERVER_URL` y ejecuta sync desde la API o `run.bat` |
 
 ## Licencia

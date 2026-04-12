@@ -37,18 +37,25 @@ async def lifespan(app: FastAPI):
     logger.info("Cargando modelo de embeddings (primera vez puede descargar ~46MB)...")
     embedder.warmup()
 
-    # Verificar Ollama (una sola llamada HTTP)
-    ollama_available, ollama_has_model = await ollama_client.check_status()
+    # Verificar Ollama — una sola llamada HTTP para ambos modelos
+    ollama_available, installed_models = await ollama_client.check_models_status()
     if ollama_available:
-        if ollama_has_model:
-            logger.info("Ollama conectado con modelo '%s'", settings.OLLAMA_MODEL)
+        fast = settings.OLLAMA_MODEL_FAST
+        smart = settings.OLLAMA_MODEL_SMART
+        fast_ok = any(fast in m for m in installed_models)
+        smart_ok = any(smart in m for m in installed_models)
+
+        if fast_ok:
+            logger.info("Modelo rapido (chat):     '%s' OK", fast)
         else:
-            logger.warning(
-                "Ollama conectado pero modelo '%s' no encontrado. "
-                "Ejecuta: ollama pull %s",
-                settings.OLLAMA_MODEL,
-                settings.OLLAMA_MODEL,
-            )
+            logger.warning("Modelo rapido (chat):     '%s' NO encontrado — ejecuta: ollama pull %s", fast, fast)
+
+        if smart == fast:
+            logger.info("Modelo inteligente (prof): mismo que rapido ('%s')", smart)
+        elif smart_ok:
+            logger.info("Modelo inteligente (prof): '%s' OK", smart)
+        else:
+            logger.warning("Modelo inteligente (prof): '%s' NO encontrado — ejecuta: ollama pull %s", smart, smart)
     else:
         logger.warning(
             "Ollama no disponible en %s. "

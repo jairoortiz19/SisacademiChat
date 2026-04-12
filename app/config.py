@@ -23,7 +23,11 @@ class Settings:
 
     # Ollama
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")  # alias legacy
+    # Modelo rapido: chat de estudiantes (RAG) — priorioza velocidad
+    OLLAMA_MODEL_FAST: str = os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+    # Modelo inteligente: reportes del profesor (planes, narrativas, ejercicios) — prioriza calidad
+    OLLAMA_MODEL_SMART: str = os.getenv("OLLAMA_MODEL_SMART", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
     OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "2048"))
     OLLAMA_NUM_PREDICT: int = int(os.getenv("OLLAMA_NUM_PREDICT", "512"))
     OLLAMA_TEMPERATURE: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.1"))

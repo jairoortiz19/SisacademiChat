@@ -159,21 +159,30 @@ class OllamaClient:
 
     async def check_status(self) -> tuple[bool, bool]:
         """
-        Verifica disponibilidad de Ollama y existencia del modelo en una sola llamada.
+        Verifica disponibilidad de Ollama y existencia del modelo rapido en una sola llamada.
 
         Returns:
-            (is_available, has_model)
+            (is_available, has_fast_model)
+        """
+        available, installed = await self.check_models_status()
+        fast = settings.OLLAMA_MODEL_FAST
+        return available, fast in installed
+
+    async def check_models_status(self) -> tuple[bool, set[str]]:
+        """
+        Retorna (is_available, set_de_modelos_instalados).
+        Permite verificar cualquier modelo con una sola llamada HTTP.
         """
         try:
             client = await self._get_client()
             resp = await client.get("/api/tags")
             if resp.status_code != 200:
-                return False, False
+                return False, set()
             data = resp.json()
-            models = [m.get("name", "") for m in data.get("models", [])]
-            return True, any(self.model in m for m in models)
+            installed = {m.get("name", "") for m in data.get("models", [])}
+            return True, installed
         except Exception:
-            return False, False
+            return False, set()
 
     async def is_available(self) -> bool:
         available, _ = await self.check_status()

@@ -28,16 +28,17 @@ class Settings:
     OLLAMA_MODEL_FAST: str = os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
     # Modelo inteligente: reportes del profesor (planes, narrativas, ejercicios) — prioriza calidad
     OLLAMA_MODEL_SMART: str = os.getenv("OLLAMA_MODEL_SMART", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
-    OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "2048"))
+    OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
     OLLAMA_NUM_PREDICT: int = int(os.getenv("OLLAMA_NUM_PREDICT", "512"))
     OLLAMA_TEMPERATURE: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.1"))
     OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+    OLLAMA_READ_TIMEOUT: float = float(os.getenv("OLLAMA_READ_TIMEOUT", "300"))
 
     # RAG
-    TOP_K: int = int(os.getenv("TOP_K", "3"))
+    TOP_K: int = int(os.getenv("TOP_K", "5"))
     MAX_QUERY_LENGTH: int = int(os.getenv("MAX_QUERY_LENGTH", "500"))
-    MIN_RELEVANCE_SCORE: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.25"))
-    MAX_CHUNK_LENGTH: int = int(os.getenv("MAX_CHUNK_LENGTH", "500"))
+    MIN_RELEVANCE_SCORE: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.18"))
+    MAX_CHUNK_LENGTH: int = int(os.getenv("MAX_CHUNK_LENGTH", "650"))
 
     # Embeddings
     EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

@@ -41,6 +41,23 @@ def _get_logs_connection() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_knowledge_search_support(conn: sqlite3.Connection) -> None:
+    """Crea y reconstruye los indices locales de busqueda textual."""
+    try:
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts "
+            "USING fts5(chunk_text, source_name, section, tokenize='unicode61 remove_diacritics 2')"
+        )
+        conn.execute("DELETE FROM chunks_fts")
+        conn.execute(
+            "INSERT INTO chunks_fts (rowid, chunk_text, source_name, section) "
+            "SELECT id, chunk_text, source_name, COALESCE(section, '') FROM chunks"
+        )
+    except sqlite3.OperationalError:
+        # Algunas builds de SQLite pueden no incluir FTS5.
+        pass
+
+
 def get_knowledge_db() -> sqlite3.Connection:
     """Retorna una conexion persistente a la BD de conocimiento."""
     global _knowledge_conn
@@ -91,6 +108,8 @@ def init_knowledge_db():
 
         CREATE INDEX IF NOT EXISTS idx_chunks_source
             ON chunks(source_name);
+        CREATE INDEX IF NOT EXISTS idx_chunks_page
+            ON chunks(page_number);
     """)
     # Tabla virtual vec0 se crea aparte (no soporta IF NOT EXISTS en executescript)
     try:
@@ -99,6 +118,7 @@ def init_knowledge_db():
         )
     except sqlite3.OperationalError:
         pass  # Ya existe
+    _ensure_knowledge_search_support(conn)
     conn.commit()
 
 

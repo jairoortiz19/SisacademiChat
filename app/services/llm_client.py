@@ -64,7 +64,12 @@ class OllamaClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                timeout=httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=10.0),
+                timeout=httpx.Timeout(
+                    connect=10.0,
+                    read=settings.OLLAMA_READ_TIMEOUT,
+                    write=30.0,
+                    pool=30.0,
+                ),
             )
         return self._client
 

@@ -3,6 +3,7 @@ import logging
 import math
 import re
 import time
+import unicodedata
 import uuid
 from typing import AsyncGenerator
 
@@ -14,6 +15,7 @@ from app.services.query_cache import query_cache
 from app.security import sanitize_query
 
 logger = logging.getLogger(__name__)
+QuestionIntent = str
 
 SYSTEM_PROMPT = """Eres un asistente educativo experto. Tu trabajo es responder usando UNICAMENTE el contexto proporcionado de los materiales del curso.
 
@@ -33,8 +35,20 @@ Tu tarea:
 2. Detectar cualquier afirmacion no sustentada.
 3. Si hay calculos, rehacerlos solo con los datos del contexto.
 4. Corregir el borrador si es necesario.
+5. No incluyas frases meta como "la respuesta final es", notas sobre el borrador ni comentarios del sistema.
+6. Devuelve una respuesta final limpia en espanol, breve y natural.
 
 Devuelve solo la respuesta final correcta, clara y basada en el contexto."""
+
+REWRITE_PROMPT = """Eres editor de respuestas educativas.
+
+Tu tarea:
+1. Reescribir el borrador en espanol claro y natural.
+2. Mantener solo la informacion sustentada en el contexto.
+3. Eliminar frases meta, notas sobre el borrador y cualquier mezcla con otro idioma.
+4. Si la pregunta es de orientacion, expresa criterios o ideas del material, no inventes pasos si el contexto no los enumera.
+
+Devuelve solo la respuesta final."""
 
 _NO_INFO_ANSWER = (
     "No encontre informacion suficiente sobre eso en los materiales de estudio disponibles. "
@@ -60,12 +74,96 @@ _resolved_smart_model_checked = False
 _CABLE_HEIGHT_RE = re.compile(r"poste de\s+(\d+(?:[.,]\d+)?)\s+metros?\s+de\s+altura", re.IGNORECASE)
 _CABLE_HORIZONTAL_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s+metros?\s+de\s+distancia horizontal", re.IGNORECASE)
 _CABLE_DEPTH_RE = re.compile(r"profundidad de\s+(\d+(?:[.,]\d+)?)\s+metros?", re.IGNORECASE)
+_NON_SPANISH_ARTIFACTS = (" nao ", " não ", " presão", " laberintos.", " ou ")
+_META_PREFIX_RE = re.compile(
+    r"^\s*(la respuesta final es|respuesta final|respuesta corregida|version final)\s*:?\s*",
+    re.IGNORECASE,
+)
+_TRAILING_NOTE_RE = re.compile(r"\n+\s*nota\s*:.*$", re.IGNORECASE | re.DOTALL)
+_NUMBERED_STEP_RE = re.compile(r"^\s*\d+\.\s", re.MULTILINE)
+_TEXT_TOKEN_RE = re.compile(r"[a-z0-9]{4,}")
+_STOPWORDS = {
+    "como", "para", "entre", "sobre", "desde", "hasta", "donde", "cuando",
+    "porque", "quien", "quienes", "cual", "cuales", "estos", "estas", "este",
+    "esta", "solo", "segun", "puede", "pueden", "deben", "tiene", "tienen",
+    "ellos", "ellas", "todos", "todas", "mucho", "muchos", "mucha", "muchas",
+}
+_NOISY_SECTION_HINTS = (
+    "temas", "objetivo", "unidad", "actividad", "introduccion", "aprend",
+    "materiales", "reto", "evaluacion", "competencia",
+)
+_DEFINITION_CUES = (
+    "estan establecidos", "esta establecido", "se explica", "se refiere",
+    "consiste", "significa", "para que existe", "los principales fines",
+)
+_LIST_CUES = (
+    "los principales", "incluye", "incluyen", "se clasifican", "elementos",
+    "acciones", "caracteristicas", "fines son",
+)
+_COMPARISON_TEXT_CUES = (
+    "diferencia", "similitud", "mientras", "en cambio", "por otro lado", "ambos",
+)
+_GUIDANCE_TEXT_CUES = (
+    "impacto", "consecuencias", "respeto", "claridad", "limites", "analiza",
+    "reflexiona", "considera", "preguntas", "bienestar", "valores",
+)
+_LIST_HINTS = (
+    "que acciones", "qué acciones", "cuales son", "cuáles son", "que fenomenos",
+    "qué fenómenos", "que temas", "qué temas", "que elementos", "qué elementos",
+)
+_DEFINITION_HINTS = (
+    "que es", "qué es", "que son", "qué son", "en que consiste", "en qué consiste",
+)
+_COMPARISON_HINTS = (
+    "diferencia entre", "cual es la diferencia", "cuál es la diferencia",
+    "relacion existe", "relación existe", "compar", "similitud",
+)
+_GUIDANCE_HINTS = (
+    "como analizar", "cómo analizar", "como decir", "cómo decir", "como actuar",
+    "cómo actuar", "como responder", "cómo responder", "como enfrentar", "cómo enfrentar",
+    "como manejar", "cómo manejar", "como tomar", "cómo tomar",
+)
 
 
 def _is_numeric_question(question: str) -> bool:
     """Detecta preguntas donde conviene hacer verificacion adicional."""
     lowered = question.lower()
     return any(hint in lowered for hint in _NUMERIC_HINTS)
+
+
+def _detect_question_intent(question: str) -> QuestionIntent:
+    """Clasifica la intencion de la pregunta para ajustar retrieval y respuesta."""
+    lowered = question.lower().replace("¿", "").replace("?", "").strip()
+    if _is_numeric_question(question):
+        return "numeric"
+    if any(hint in lowered for hint in _GUIDANCE_HINTS):
+        return "guidance"
+    if any(hint in lowered for hint in _COMPARISON_HINTS):
+        return "comparison"
+    if any(hint in lowered for hint in _LIST_HINTS):
+        return "list"
+    if any(lowered.startswith(hint) for hint in _DEFINITION_HINTS):
+        return "definition"
+    if lowered.startswith(("como ", "cómo ")):
+        return "explanation"
+    return "general"
+
+
+def _normalize_text(text: str | None) -> str:
+    normalized = unicodedata.normalize("NFKD", text or "")
+    stripped = "".join(char for char in normalized if not unicodedata.combining(char))
+    return " ".join(stripped.lower().split())
+
+
+def _extract_query_terms(question: str) -> list[str]:
+    seen = set()
+    terms = []
+    for raw in _TEXT_TOKEN_RE.findall(_normalize_text(question)):
+        if raw in _STOPWORDS or raw in seen:
+            continue
+        seen.add(raw)
+        terms.append(raw)
+    return terms
 
 
 def _effective_min_score() -> float:
@@ -86,12 +184,38 @@ def _is_low_confidence(chunks: list[dict], requested_top_k: int) -> bool:
     return len(chunks) < expected or max_score < 0.20 or avg_score < 0.18
 
 
-def _answer_needs_revision(answer: str) -> bool:
+def _has_non_spanish_artifacts(answer: str) -> bool:
+    normalized = f" {answer.lower()} "
+    return any(token in normalized for token in _NON_SPANISH_ARTIFACTS)
+
+
+def _has_meta_artifacts(answer: str) -> bool:
+    return bool(_META_PREFIX_RE.search(answer) or _TRAILING_NOTE_RE.search(answer))
+
+
+def _sanitize_answer_text(answer: str) -> str:
+    cleaned = answer.replace("\r", "").strip()
+    cleaned = _META_PREFIX_RE.sub("", cleaned)
+    cleaned = _TRAILING_NOTE_RE.sub("", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _answer_needs_revision(answer: str, intent: QuestionIntent, low_confidence: bool) -> bool:
     """Marca borradores debiles o contradictorios para una segunda pasada."""
-    normalized = answer.strip().lower()
+    cleaned = _sanitize_answer_text(answer)
+    normalized = cleaned.lower()
     if len(normalized) < 40:
         return True
-    return any(hint in normalized for hint in _UNCERTAIN_ANSWER_HINTS)
+    if any(hint in normalized for hint in _UNCERTAIN_ANSWER_HINTS):
+        return True
+    if _has_non_spanish_artifacts(cleaned):
+        return True
+    if _has_meta_artifacts(answer):
+        return True
+    if low_confidence and intent in {"definition", "list", "guidance"}:
+        return True
+    return False
 
 
 def _select_focus_source(chunks: list[dict]) -> str | None:
@@ -108,6 +232,173 @@ def _select_focus_source(chunks: list[dict]) -> str | None:
     if not scores:
         return None
     return max(scores.items(), key=lambda item: item[1])[0]
+
+
+def _chunk_signature(chunk: dict) -> tuple[str | None, int | None, str]:
+    return (
+        chunk.get("source_name"),
+        chunk.get("page_number"),
+        _normalize_text(chunk.get("chunk_text", "")),
+    )
+
+
+def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
+    deduped: list[dict] = []
+    seen_ids = set()
+    seen_signatures = set()
+    for chunk in chunks:
+        chunk_id = chunk.get("chunk_id")
+        signature = _chunk_signature(chunk)
+        if chunk_id in seen_ids or signature in seen_signatures:
+            continue
+        if chunk_id is not None:
+            seen_ids.add(chunk_id)
+        seen_signatures.add(signature)
+        deduped.append(chunk)
+    return deduped
+
+
+def _chunk_content_score(chunk: dict, intent: QuestionIntent, query_terms: list[str]) -> float:
+    text = _normalize_text(chunk.get("chunk_text", ""))
+    section = _normalize_text(chunk.get("section", ""))
+    score = chunk.get("score", 0.0)
+
+    if any(hint in section for hint in _NOISY_SECTION_HINTS):
+        score -= 0.08
+    if len(text) < 140:
+        score -= 0.03
+
+    term_hits = sum(1 for term in query_terms if term in text)
+    score += min(term_hits * 0.03, 0.12)
+
+    if intent == "definition" and any(cue in text for cue in _DEFINITION_CUES):
+        score += 0.12
+    elif intent == "list" and any(cue in text for cue in _LIST_CUES):
+        score += 0.08
+    elif intent == "comparison" and any(cue in text for cue in _COMPARISON_TEXT_CUES):
+        score += 0.08
+    elif intent == "guidance" and any(cue in text for cue in _GUIDANCE_TEXT_CUES):
+        score += 0.10
+
+    if chunk.get("page_number") is not None:
+        score += 0.01
+    return score
+
+
+def _rank_source_candidates(
+    primary_chunks: list[dict],
+    question: str,
+    intent: QuestionIntent,
+) -> list[tuple[str, float, list[dict]]]:
+    query_terms = _extract_query_terms(question)[:6]
+    candidates: list[tuple[str, float, list[dict]]] = []
+
+    for source_name in dict.fromkeys(
+        chunk.get("source_name") for chunk in primary_chunks if chunk.get("source_name")
+    ):
+        seed_chunks = [chunk for chunk in primary_chunks if chunk.get("source_name") == source_name]
+        supporting_chunks = vector_store.find_supporting_chunks(source_name, question, limit=4)
+        merged = _dedupe_chunks(seed_chunks + supporting_chunks)
+        rescored = []
+        for chunk in merged:
+            rescored_chunk = dict(chunk)
+            rescored_chunk["score"] = max(
+                chunk.get("score", 0.0),
+                _chunk_content_score(chunk, intent, query_terms),
+            )
+            rescored.append(rescored_chunk)
+
+        rescored.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+        if not rescored:
+            continue
+
+        source_score = sum(item.get("score", 0.0) for item in rescored[:3]) + (0.02 * len(seed_chunks))
+        candidates.append((source_name, source_score, rescored))
+
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    return candidates
+
+
+def _should_anchor_to_focus_source(intent: QuestionIntent, chunks: list[dict]) -> bool:
+    """Decide si conviene concentrar el contexto en una fuente dominante."""
+    if intent not in {"definition", "list", "guidance", "explanation"} or not chunks:
+        return False
+
+    scores: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for chunk in chunks[:5]:
+        source_name = chunk.get("source_name")
+        if not source_name:
+            continue
+        scores[source_name] = scores.get(source_name, 0.0) + chunk.get("score", 0.0)
+        counts[source_name] = counts.get(source_name, 0) + 1
+
+    if not scores:
+        return False
+
+    ranked = sorted(
+        scores.items(),
+        key=lambda item: (item[1], counts.get(item[0], 0)),
+        reverse=True,
+    )
+    top_source, top_score = ranked[0]
+    total_score = sum(scores.values())
+    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+    top_count = counts.get(top_source, 0)
+
+    return (
+        top_count >= 3
+        or (total_score > 0 and top_score / total_score >= 0.45)
+        or (top_count >= 2 and top_score >= second_score * 1.20)
+    )
+
+
+def _anchor_primary_chunks(
+    primary_chunks: list[dict],
+    question: str,
+    intent: QuestionIntent,
+) -> list[dict]:
+    """Refuerza una fuente dominante cuando la pregunta parece resolverse mejor alli."""
+    if not primary_chunks:
+        return primary_chunks
+
+    ranked_sources = _rank_source_candidates(primary_chunks, question, intent)
+    if not ranked_sources:
+        return primary_chunks
+
+    top_source, top_score, top_chunks = ranked_sources[0]
+    second_score = ranked_sources[1][1] if len(ranked_sources) > 1 else 0.0
+    should_anchor = _should_anchor_to_focus_source(intent, primary_chunks)
+    if not should_anchor:
+        should_anchor = (
+            top_score >= max(second_score * 1.12, second_score + 0.08)
+            or (intent in {"definition", "guidance", "list"} and top_score >= 0.55)
+        )
+
+    if not should_anchor:
+        return primary_chunks
+
+    anchored = [dict(chunk) for chunk in top_chunks]
+    if len({chunk.get("source_name") for chunk in anchored}) == 1:
+        focus_page = anchored[0].get("page_number")
+        if focus_page is not None and intent in {"definition", "list", "guidance", "explanation"}:
+            anchored.sort(
+                key=lambda item: (
+                    abs((item.get("page_number") or focus_page) - focus_page),
+                    -item.get("score", 0.0),
+                    item.get("page_number") or focus_page,
+                )
+            )
+        else:
+            anchored.sort(
+                key=lambda item: (
+                    item.get("page_number") is None,
+                    item.get("page_number") or 0,
+                    -item.get("score", 0.0),
+                )
+            )
+    anchored_limit = 6 if intent in {"definition", "list", "guidance", "comparison"} else 5
+    return anchored[:anchored_limit] if len(anchored) >= 2 and top_source else primary_chunks
 
 
 def _parse_decimal(value: str) -> float:
@@ -165,11 +456,34 @@ async def _resolve_smart_model() -> str:
     return _resolved_smart_model or settings.OLLAMA_MODEL_FAST
 
 
-def _build_context(chunks: list[dict], question: str) -> str:
+def _build_context(chunks: list[dict], question: str, intent: QuestionIntent) -> str:
     """Construye el bloque de contexto a partir de los chunks encontrados."""
-    max_len = max(settings.MAX_CHUNK_LENGTH, 750) if _is_numeric_question(question) else settings.MAX_CHUNK_LENGTH
+    if intent == "numeric":
+        max_len = max(settings.MAX_CHUNK_LENGTH, 750)
+    elif intent in {"definition", "list", "guidance"}:
+        max_len = max(settings.MAX_CHUNK_LENGTH, 850)
+    else:
+        max_len = settings.MAX_CHUNK_LENGTH
+
+    ordered_chunks = _dedupe_chunks(chunks)
+    if len({chunk.get("source_name") for chunk in ordered_chunks if chunk.get("source_name")}) == 1:
+        ordered_chunks = sorted(
+            ordered_chunks,
+            key=lambda item: (
+                item.get("page_number") is None,
+                item.get("page_number") or 0,
+                -item.get("score", 0.0),
+            ),
+        )
+    else:
+        ordered_chunks = sorted(
+            ordered_chunks,
+            key=lambda item: item.get("score", 0.0),
+            reverse=True,
+        )
+
     parts = []
-    for chunk in chunks:
+    for chunk in ordered_chunks:
         header = f"[Fuente: {chunk['source_name']}"
         if chunk.get("page_number"):
             header += f", Pagina {chunk['page_number']}"
@@ -184,8 +498,48 @@ def _build_context(chunks: list[dict], question: str) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _build_messages(question: str, context: str) -> list[dict]:
+def _build_intent_instructions(intent: QuestionIntent) -> str:
+    """Reglas especificas de salida segun la intencion de la pregunta."""
+    if intent == "definition":
+        return (
+            "Forma de responder: da primero una definicion directa en 1 o 2 frases. "
+            "Si el contexto enumera fines, elementos o funciones, incluyelos todos de forma breve. "
+            "No sustituyas la respuesta por el titulo de la unidad ni la reduzcas a uno o dos ejemplos si el material muestra mas."
+        )
+    if intent == "list":
+        return (
+            "Forma de responder: devuelve una lista breve y concreta. "
+            "Incluye solo elementos explicitamente mencionados o claramente agrupados por el contexto. "
+            "No inventes categorias nuevas."
+        )
+    if intent == "comparison":
+        return (
+            "Forma de responder: compara solo por los rasgos o funciones que aparecen en el contexto. "
+            "No agregues analogias ni diferencias externas."
+        )
+    if intent == "guidance":
+        return (
+            "Forma de responder: si el material no da pasos literales, no inventes un metodo rigido ni una lista numerada. "
+            "Resume como criterios, preguntas de reflexion o ideas que el material sugiere considerar. "
+            "Puedes usar expresiones como 'segun el material' o 'el material sugiere'."
+        )
+    if intent == "numeric":
+        return (
+            "Forma de responder: extrae los datos numericos del contexto, muestra la relacion matematica minima necesaria y entrega el resultado final."
+        )
+    if intent == "explanation":
+        return (
+            "Forma de responder: explica con lenguaje directo en 1 o 2 parrafos cortos o en 3 puntos maximo. "
+            "No uses metaforas, frases literarias ni cierres grandilocuentes."
+        )
+    return (
+        "Forma de responder: explica con lenguaje directo, sin metaforas, sin tono ensayistico y sin convertir ideas generales en pasos si el contexto no lo hace."
+    )
+
+
+def _build_messages(question: str, context: str, intent: QuestionIntent) -> list[dict]:
     """Construye la lista de mensajes para enviar al LLM."""
+    intent_instructions = _build_intent_instructions(intent)
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -194,13 +548,19 @@ def _build_messages(question: str, context: str) -> list[dict]:
                 "Contexto de los materiales de estudio:\n\n"
                 f"{context}\n\n---\n\n"
                 f"Pregunta del estudiante: {question}\n\n"
+                f"{intent_instructions}\n\n"
                 "Responde solo con base en el contexto."
             ),
         },
     ]
 
 
-def _build_verification_messages(question: str, context: str, draft_answer: str) -> list[dict]:
+def _build_verification_messages(
+    question: str,
+    context: str,
+    draft_answer: str,
+    intent: QuestionIntent,
+) -> list[dict]:
     """Mensajes para una segunda pasada de verificacion."""
     return [
         {"role": "system", "content": VERIFICATION_PROMPT},
@@ -210,7 +570,30 @@ def _build_verification_messages(question: str, context: str, draft_answer: str)
                 f"Pregunta:\n{question}\n\n"
                 f"Contexto:\n{context}\n\n"
                 f"Borrador a verificar:\n{draft_answer}\n\n"
+                f"{_build_intent_instructions(intent)}\n\n"
                 "Corrige cualquier error y devuelve la respuesta final."
+            ),
+        },
+    ]
+
+
+def _build_rewrite_messages(
+    question: str,
+    context: str,
+    draft_answer: str,
+    intent: QuestionIntent,
+) -> list[dict]:
+    """Mensajes para una pasada ligera de limpieza y reescritura."""
+    return [
+        {"role": "system", "content": REWRITE_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Pregunta:\n{question}\n\n"
+                f"Contexto:\n{context}\n\n"
+                f"Borrador a reescribir:\n{draft_answer}\n\n"
+                f"{_build_intent_instructions(intent)}\n\n"
+                "Reescribe y devuelve solo la respuesta final."
             ),
         },
     ]
@@ -245,6 +628,7 @@ async def _collect_model_response(messages: list[dict], model: str) -> tuple[str
 
 def _build_sources_payload(chunks: list[dict]) -> list[dict]:
     """Normaliza las fuentes para la respuesta API."""
+    unique_chunks = _dedupe_chunks(chunks)
     return [
         {
             "source_name": chunk["source_name"],
@@ -253,8 +637,40 @@ def _build_sources_payload(chunks: list[dict]) -> list[dict]:
             "section": chunk.get("section"),
             "score": round(chunk.get("score", 0.0), 3),
         }
-        for chunk in chunks
+        for chunk in unique_chunks
     ]
+
+
+def _answer_quality_score(answer: str, intent: QuestionIntent) -> float:
+    cleaned = _sanitize_answer_text(answer)
+    normalized = _normalize_text(cleaned)
+    score = 0.0
+
+    score += min(len(cleaned), 450) / 450.0
+    if not _has_non_spanish_artifacts(cleaned):
+        score += 0.35
+    if not _has_meta_artifacts(answer):
+        score += 0.25
+    if intent in {"guidance", "explanation"} and not _NUMBERED_STEP_RE.search(cleaned):
+        score += 0.10
+    if intent == "definition" and any(cue in normalized for cue in _DEFINITION_CUES):
+        score += 0.10
+    if intent == "list" and ("\n" in cleaned or ":" in cleaned):
+        score += 0.05
+    return score
+
+
+def _choose_best_answer(draft_answer: str, reviewed_answer: str, intent: QuestionIntent) -> str:
+    draft_clean = _sanitize_answer_text(draft_answer)
+    reviewed_clean = _sanitize_answer_text(reviewed_answer)
+    if not reviewed_clean:
+        return draft_clean
+
+    reviewed_score = _answer_quality_score(reviewed_clean, intent)
+    draft_score = _answer_quality_score(draft_clean, intent)
+    if reviewed_score + 0.05 >= draft_score:
+        return reviewed_clean
+    return draft_clean
 
 
 async def query(
@@ -276,6 +692,7 @@ async def query(
     conversation_id = conversation_id or str(uuid.uuid4())
 
     clean_message = sanitize_query(message)
+    question_intent = _detect_question_intent(clean_message)
 
     cached = query_cache.get(clean_message, top_k)
     if cached:
@@ -335,23 +752,10 @@ async def query(
         )
         return
 
-    numeric_question = _is_numeric_question(clean_message)
+    numeric_question = question_intent == "numeric"
     primary_chunks = chunks[: max(top_k, 1)]
+    primary_chunks = _anchor_primary_chunks(primary_chunks, clean_message, question_intent)
     low_confidence = _is_low_confidence(primary_chunks, top_k)
-    if not numeric_question and low_confidence:
-        focus_source = _select_focus_source(primary_chunks)
-        if focus_source:
-            supporting_chunks = vector_store.find_supporting_chunks(
-                focus_source,
-                clean_message,
-                limit=2,
-            )
-            seen = {chunk["chunk_id"] for chunk in primary_chunks}
-            for chunk in supporting_chunks:
-                if chunk["chunk_id"] not in seen:
-                    primary_chunks.append(chunk)
-                    seen.add(chunk["chunk_id"])
-            primary_chunks.sort(key=lambda item: item.get("score", 0.0), reverse=True)
 
     if numeric_question:
         chunks = vector_store.expand_with_neighbors(
@@ -360,21 +764,23 @@ async def query(
             max_chunks=3,
         )
     else:
+        neighbor_limit = 2 if question_intent == "definition" else 1
+        max_chunks = max(top_k + 3, 8) if question_intent == "definition" else max(top_k + 2, 7)
         chunks = vector_store.expand_with_neighbors(
             primary_chunks,
-            limit=1,
-            max_chunks=max(top_k + 2, 6),
+            limit=neighbor_limit,
+            max_chunks=max_chunks,
         )
 
     sources_data = _build_sources_payload(chunks)
     yield {"type": "sources", "sources": sources_data, "conversation_id": conversation_id}
 
-    context = _build_context(chunks, clean_message)
-    messages = _build_messages(clean_message, context)
+    context = _build_context(chunks, clean_message, question_intent)
+    messages = _build_messages(clean_message, context, question_intent)
     source_names = list({chunk["source_name"] for chunk in chunks})
 
-    deliberate_mode = numeric_question or low_confidence
-    smart_model = await _resolve_smart_model() if deliberate_mode else settings.OLLAMA_MODEL_FAST
+    deliberate_mode = numeric_question or low_confidence or question_intent != "general"
+    smart_model = settings.OLLAMA_MODEL_FAST
     total_tokens_in = 0
     total_tokens_out = 0
 
@@ -415,16 +821,34 @@ async def query(
             total_tokens_in += draft_stats.tokens_in
             total_tokens_out += draft_stats.tokens_out
 
+            draft_answer = _sanitize_answer_text(draft_answer)
             answer_text = draft_answer
-            if numeric_question or _answer_needs_revision(draft_answer):
-                verification_messages = _build_verification_messages(clean_message, context, draft_answer)
-                final_answer, verify_stats = await _collect_model_response(
-                    verification_messages,
-                    smart_model,
+            if numeric_question or _answer_needs_revision(draft_answer, question_intent, low_confidence):
+                if numeric_question or question_intent in {"definition", "list", "comparison"}:
+                    smart_model = await _resolve_smart_model()
+                    review_messages = _build_verification_messages(
+                        clean_message,
+                        context,
+                        draft_answer,
+                        question_intent,
+                    )
+                    review_model = smart_model
+                else:
+                    review_messages = _build_rewrite_messages(
+                        clean_message,
+                        context,
+                        draft_answer,
+                        question_intent,
+                    )
+                    review_model = settings.OLLAMA_MODEL_FAST
+
+                reviewed_answer, review_stats = await _collect_model_response(
+                    review_messages,
+                    review_model,
                 )
-                total_tokens_in += verify_stats.tokens_in
-                total_tokens_out += verify_stats.tokens_out
-                answer_text = final_answer or draft_answer
+                total_tokens_in += review_stats.tokens_in
+                total_tokens_out += review_stats.tokens_out
+                answer_text = _choose_best_answer(draft_answer, reviewed_answer, question_intent)
 
             for piece in _stream_text(answer_text):
                 yield {"type": "token", "content": piece}
@@ -442,7 +866,7 @@ async def query(
                     yield {"type": "token", "content": token}
             total_tokens_in += stats.tokens_in
             total_tokens_out += stats.tokens_out
-            answer_text = "".join(answer_parts).strip()
+            answer_text = _sanitize_answer_text("".join(answer_parts).strip())
     except ConnectionError as e:
         logger.error("Ollama no disponible: %s", e)
         yield {"type": "error", "error": str(e)}

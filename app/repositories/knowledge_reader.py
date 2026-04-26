@@ -7,7 +7,7 @@ y descargados via POST /sync/knowledge. Este modulo solo los lee.
 import logging
 from collections import defaultdict
 
-from app.database import get_knowledge_db
+from app.database import open_knowledge_db as get_knowledge_db
 
 logger = logging.getLogger(__name__)
 

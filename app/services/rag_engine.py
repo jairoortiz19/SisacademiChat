@@ -26,7 +26,8 @@ Reglas:
 4. Responde en espanol de forma clara, breve y didactica.
 5. Si la pregunta pide una lista, enumera solo los puntos que aparezcan en el contexto.
 6. Si la pregunta implica calculos, extrae primero los datos del contexto, aplica la formula adecuada y revisa la cuenta antes de responder.
-7. No inventes informacion ni completes vacios con conocimiento externo."""
+7. No inventes informacion ni completes vacios con conocimiento externo.
+8. Si el contexto contiene fragmentos de cuentos, narrativa o dialogo ficticio, NO los uses para responder preguntas sobre conceptos, definiciones o explicaciones del mundo real; usa esos fragmentos SOLO si la pregunta es sobre el texto literario en si."""
 
 VERIFICATION_PROMPT = """Eres un verificador de respuestas educativas.
 
@@ -54,10 +55,14 @@ _NO_INFO_ANSWER = (
     "No encontre informacion suficiente sobre eso en los materiales de estudio disponibles. "
     "Consulta a tu docente o revisa directamente los documentos del curso."
 )
-_NUMERIC_HINTS = (
-    "calcula", "calcular", "cuanto", "cuánto", "longitud", "area", "área", "distancia",
-    "hipotenusa", "porcentaje", "promedio", "metros", "grados", "radianes", "ecuacion",
-    "ecuación", "resolver", "cuál es el resultado", "cuanto mide",
+_NUMERIC_TOKEN_HINTS = {
+    "calcula", "calcular", "cuanto", "cuanta", "cuantos", "cuantas", "longitud",
+    "area", "distancia", "hipotenusa", "porcentaje", "promedio", "metros",
+    "grados", "radianes", "ecuacion", "resolver", "resultado", "mide",
+}
+_NUMERIC_PHRASE_HINTS = (
+    "cual es el resultado", "cuanto mide", "cuanta mide", "distancia horizontal",
+    "aplica pitagoras", "teorema de pitagoras",
 )
 _UNCERTAIN_ANSWER_HINTS = (
     "no encontre informacion",
@@ -92,6 +97,12 @@ _NOISY_SECTION_HINTS = (
     "temas", "objetivo", "unidad", "actividad", "introduccion", "aprend",
     "materiales", "reto", "evaluacion", "competencia",
 )
+_FACTUAL_INTENTS: frozenset = frozenset({"definition", "list", "comparison", "explanation", "numeric"})
+_FICTION_TEXT_MARKERS = (
+    "habia una vez", "había una vez", "erase una vez", "érase una vez",
+    " dijo:", " respondio:", " respondió:", " le pregunto:", " le preguntó:",
+    " contesto:", " contestó:",
+)
 _DEFINITION_CUES = (
     "estan establecidos", "esta establecido", "se explica", "se refiere",
     "consiste", "significa", "para que existe", "los principales fines",
@@ -125,10 +136,34 @@ _GUIDANCE_HINTS = (
 )
 
 
+def _is_fiction_chunk(chunk: dict, patterns: list[str]) -> bool:
+    """Detecta si un chunk proviene de una fuente ficticia o narrativa."""
+    source = (chunk.get("source_name") or "").lower()
+    if patterns and any(p in source for p in patterns):
+        return True
+    text = (chunk.get("chunk_text") or "").lower()
+    return any(marker in text for marker in _FICTION_TEXT_MARKERS)
+
+
+def _filter_fictional_chunks(chunks: list[dict], intent: QuestionIntent) -> list[dict]:
+    """Filtra chunks de fuentes ficticias cuando la pregunta es factual."""
+    if intent not in _FACTUAL_INTENTS:
+        return chunks
+    raw = settings.FICTIONAL_SOURCE_PATTERNS
+    patterns = [p.strip().lower() for p in raw.split(",") if p.strip()] if raw else []
+    factual = [c for c in chunks if not _is_fiction_chunk(c, patterns)]
+    return factual if factual else chunks  # no dejar sin contexto
+
+
 def _is_numeric_question(question: str) -> bool:
     """Detecta preguntas donde conviene hacer verificacion adicional."""
-    lowered = question.lower()
-    return any(hint in lowered for hint in _NUMERIC_HINTS)
+    normalized = _normalize_text(question)
+    if any(hint in normalized for hint in _NUMERIC_PHRASE_HINTS):
+        return True
+
+    # Comparar por tokens evita falsos positivos como "tareas" -> "area".
+    tokens = set(_TEXT_TOKEN_RE.findall(normalized))
+    return bool(tokens & _NUMERIC_TOKEN_HINTS)
 
 
 def _detect_question_intent(question: str) -> QuestionIntent:
@@ -297,7 +332,7 @@ def _rank_source_candidates(
         chunk.get("source_name") for chunk in primary_chunks if chunk.get("source_name")
     ):
         seed_chunks = [chunk for chunk in primary_chunks if chunk.get("source_name") == source_name]
-        supporting_chunks = vector_store.find_supporting_chunks(source_name, question, limit=4)
+        supporting_chunks = vector_store.find_supporting_chunks(source_name, question, limit=3)
         merged = _dedupe_chunks(seed_chunks + supporting_chunks)
         rescored = []
         for chunk in merged:
@@ -458,12 +493,13 @@ async def _resolve_smart_model() -> str:
 
 def _build_context(chunks: list[dict], question: str, intent: QuestionIntent) -> str:
     """Construye el bloque de contexto a partir de los chunks encontrados."""
+    configured_max_len = max(settings.MAX_CHUNK_LENGTH, 180)
     if intent == "numeric":
-        max_len = max(settings.MAX_CHUNK_LENGTH, 750)
+        max_len = max(configured_max_len, 500)
     elif intent in {"definition", "list", "guidance"}:
-        max_len = max(settings.MAX_CHUNK_LENGTH, 850)
+        max_len = configured_max_len
     else:
-        max_len = settings.MAX_CHUNK_LENGTH
+        max_len = configured_max_len
 
     ordered_chunks = _dedupe_chunks(chunks)
     if len({chunk.get("source_name") for chunk in ordered_chunks if chunk.get("source_name")}) == 1:
@@ -734,6 +770,9 @@ async def query(
     if filtered:
         chunks = filtered
 
+    # Filtrar fuentes ficticias / narrativas para preguntas factuales
+    chunks = _filter_fictional_chunks(chunks, question_intent)
+
     if not chunks:
         logger.info("No hay chunks relevantes. Respondiendo sin LLM.")
         yield {"type": "sources", "sources": [], "conversation_id": conversation_id}
@@ -753,6 +792,33 @@ async def query(
         return
 
     numeric_question = question_intent == "numeric"
+
+    # Chequear confianza del retrieval ANTES del anchoring (los scores post-anchor son recalculados
+    # y no reflejan que tan bien el vector search encontro la pregunta).
+    retrieval_top_score = max((c.get("score", 0.0) for c in chunks[: max(top_k, 1)]), default=0.0)
+    if not numeric_question and retrieval_top_score < settings.MIN_TOP_SCORE_TO_ANSWER:
+        logger.info("Retrieval debil (top_score=%.3f < %.3f). Respondiendo NO_INFO sin LLM.",
+                    retrieval_top_score, settings.MIN_TOP_SCORE_TO_ANSWER)
+        primary_chunks = chunks[: max(top_k, 1)]
+        sources_data = _build_sources_payload(primary_chunks)
+        yield {"type": "sources", "sources": sources_data, "conversation_id": conversation_id}
+        yield {"type": "token", "content": _NO_INFO_ANSWER}
+        latency_ms = int((time.time() - start_time) * 1000)
+        query_cache.set(clean_message, top_k, {"sources": sources_data, "answer": _NO_INFO_ANSWER})
+        asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: _safe_log(conversation_id, clean_message, _NO_INFO_ANSWER,
+                              [c["source_name"] for c in primary_chunks], 0, 0, latency_ms),
+        )
+        yield {
+            "type": "done",
+            "conversation_id": conversation_id,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "latency_ms": latency_ms,
+        }
+        return
+
     primary_chunks = chunks[: max(top_k, 1)]
     primary_chunks = _anchor_primary_chunks(primary_chunks, clean_message, question_intent)
     low_confidence = _is_low_confidence(primary_chunks, top_k)
@@ -761,11 +827,15 @@ async def query(
         chunks = vector_store.expand_with_neighbors(
             primary_chunks[:1],
             limit=1,
-            max_chunks=3,
+            max_chunks=min(max(settings.MAX_CONTEXT_CHUNKS, 2), 3),
         )
     else:
-        neighbor_limit = 2 if question_intent == "definition" else 1
-        max_chunks = max(top_k + 3, 8) if question_intent == "definition" else max(top_k + 2, 7)
+        neighbor_limit = 1
+        context_budget = max(settings.MAX_CONTEXT_CHUNKS, 2)
+        if question_intent in {"definition", "list", "comparison"}:
+            max_chunks = min(context_budget, max(top_k + 1, 4))
+        else:
+            max_chunks = min(context_budget, max(top_k + 1, 3))
         chunks = vector_store.expand_with_neighbors(
             primary_chunks,
             limit=neighbor_limit,
@@ -779,7 +849,13 @@ async def query(
     messages = _build_messages(clean_message, context, question_intent)
     source_names = list({chunk["source_name"] for chunk in chunks})
 
-    deliberate_mode = numeric_question or low_confidence or question_intent != "general"
+    deliberate_mode = numeric_question or (
+        low_confidence and question_intent in {"definition", "list", "comparison"}
+    )
+    # Siempre usar FAST. El escalado a MEDIUM lo hacia muy lento (>90s) y no
+    # mejoraba calidad consistentemente. Mejor bloquear con NO_INFO cuando
+    # el retrieval es pesimo (MIN_TOP_SCORE_TO_ANSWER).
+    active_model = settings.OLLAMA_MODEL_FAST
     smart_model = settings.OLLAMA_MODEL_FAST
     total_tokens_in = 0
     total_tokens_out = 0
@@ -816,7 +892,7 @@ async def query(
 
             draft_answer, draft_stats = await _collect_model_response(
                 messages,
-                settings.OLLAMA_MODEL_FAST,
+                active_model,
             )
             total_tokens_in += draft_stats.tokens_in
             total_tokens_out += draft_stats.tokens_out
@@ -840,7 +916,7 @@ async def query(
                         draft_answer,
                         question_intent,
                     )
-                    review_model = settings.OLLAMA_MODEL_FAST
+                    review_model = active_model
 
                 reviewed_answer, review_stats = await _collect_model_response(
                     review_messages,
@@ -857,7 +933,7 @@ async def query(
             stats = LLMStats()
             async for token, token_stats in ollama_client.stream_chat(
                 messages,
-                model=settings.OLLAMA_MODEL_FAST,
+                model=active_model,
             ):
                 if token_stats:
                     stats = token_stats

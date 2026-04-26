@@ -23,22 +23,28 @@ class Settings:
 
     # Ollama
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")  # alias legacy
-    # Modelo rapido: chat de estudiantes (RAG) — priorioza velocidad
-    OLLAMA_MODEL_FAST: str = os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")  # alias legacy
+    # Modelo rapido: chat de estudiantes con retrieval fuerte — prioriza velocidad
+    OLLAMA_MODEL_FAST: str = os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+    # Modelo intermedio: se usa como fallback cuando la confianza del retrieval es baja
+    # (alucina menos que el FAST en contexto pobre). Default = FAST si no se configura.
+    OLLAMA_MODEL_MEDIUM: str = os.getenv("OLLAMA_MODEL_MEDIUM", "") or os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
     # Modelo inteligente: reportes del profesor (planes, narrativas, ejercicios) — prioriza calidad
-    OLLAMA_MODEL_SMART: str = os.getenv("OLLAMA_MODEL_SMART", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
-    OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
-    OLLAMA_NUM_PREDICT: int = int(os.getenv("OLLAMA_NUM_PREDICT", "512"))
+    OLLAMA_MODEL_SMART: str = os.getenv("OLLAMA_MODEL_SMART", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+    # Umbral de top_score por debajo del cual se devuelve "no hay info" en vez de alucinar
+    MIN_TOP_SCORE_TO_ANSWER: float = float(os.getenv("MIN_TOP_SCORE_TO_ANSWER", "0.15"))
+    OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "1024"))
+    OLLAMA_NUM_PREDICT: int = int(os.getenv("OLLAMA_NUM_PREDICT", "110"))
     OLLAMA_TEMPERATURE: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.1"))
-    OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
-    OLLAMA_READ_TIMEOUT: float = float(os.getenv("OLLAMA_READ_TIMEOUT", "300"))
+    OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
+    OLLAMA_READ_TIMEOUT: float = float(os.getenv("OLLAMA_READ_TIMEOUT", "120"))
 
     # RAG
-    TOP_K: int = int(os.getenv("TOP_K", "5"))
+    TOP_K: int = int(os.getenv("TOP_K", "2"))
     MAX_QUERY_LENGTH: int = int(os.getenv("MAX_QUERY_LENGTH", "500"))
-    MIN_RELEVANCE_SCORE: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.18"))
-    MAX_CHUNK_LENGTH: int = int(os.getenv("MAX_CHUNK_LENGTH", "650"))
+    MIN_RELEVANCE_SCORE: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.10"))
+    MAX_CHUNK_LENGTH: int = int(os.getenv("MAX_CHUNK_LENGTH", "420"))
+    MAX_CONTEXT_CHUNKS: int = int(os.getenv("MAX_CONTEXT_CHUNKS", "4"))
 
     # Embeddings
     EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -47,6 +53,10 @@ class Settings:
     # Cache de respuestas RAG
     QUERY_CACHE_TTL: int = int(os.getenv("QUERY_CACHE_TTL", "3600"))      # segundos (1 hora)
     QUERY_CACHE_MAX_SIZE: int = int(os.getenv("QUERY_CACHE_MAX_SIZE", "200"))  # max entradas
+
+    # Filtro de fuentes ficticias (cuentos, narrativa) — separar por coma
+    # Ejemplo: pepita,cuento,historia_de
+    FICTIONAL_SOURCE_PATTERNS: str = os.getenv("FICTIONAL_SOURCE_PATTERNS", "")
 
     # Servidor central
     SERVER_URL: str = os.getenv("SERVER_URL", "")

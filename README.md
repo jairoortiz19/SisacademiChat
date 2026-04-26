@@ -36,7 +36,7 @@ run.bat
 `run.bat` es el unico script necesario. Detecta automaticamente que falta y lo instala:
 
 1. Instala **Ollama** si no esta presente
-2. Inicia Ollama y descarga el modelo LLM (`qwen2.5:3b`)
+2. Inicia Ollama y descarga el modelo LLM liviano (`qwen2.5:0.5b`)
 3. Descarga **Python 3.12 embebido** (portable, no requiere instalacion en el sistema)
 4. Instala **pip** y todas las dependencias
 5. Inicializa las bases de datos SQLite y el modelo de embeddings (~46MB)
@@ -49,7 +49,7 @@ Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si alg
 
 ### Instalacion manual
 
-1. Instalar [Ollama](https://ollama.com) y ejecutar: `ollama pull qwen2.5:3b`
+1. Instalar [Ollama](https://ollama.com) y ejecutar: `ollama pull qwen2.5:0.5b`
 2. Instalar Python 3.12+
 3. Instalar dependencias:
     ```bash
@@ -101,25 +101,31 @@ Todas las opciones se configuran en `config.env`:
 | Variable | Default | Descripcion |
 |---|---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | URL de Ollama |
-| `OLLAMA_MODEL` | `qwen2.5:3b` | Modelo LLM a usar |
+| `OLLAMA_MODEL` | `qwen2.5:0.5b` | Modelo base (usado si no se definen los especificos) |
+| `OLLAMA_MODEL_FAST` | (= `OLLAMA_MODEL`) | Chat de estudiantes: prioriza velocidad |
+| `OLLAMA_MODEL_MEDIUM` | (= `OLLAMA_MODEL_FAST`) | Fallback liviano cuando el retrieval es debil |
+| `OLLAMA_MODEL_SMART` | (= `OLLAMA_MODEL`) | Reportes del profesor: prioriza calidad |
 
 ### Rendimiento de Ollama
 
 | Variable | Default | Descripcion |
 |---|---|---|
-| `OLLAMA_NUM_CTX` | `2048` | Ventana de contexto del LLM (tokens). Reducir = mas rapido |
-| `OLLAMA_NUM_PREDICT` | `512` | Maximo de tokens de salida. Limita largo de respuesta |
+| `OLLAMA_NUM_CTX` | `1024` | Ventana de contexto del LLM (tokens). Reducir = mas rapido |
+| `OLLAMA_NUM_PREDICT` | `110` | Maximo de tokens de salida. Limita largo de respuesta |
 | `OLLAMA_TEMPERATURE` | `0.1` | Temperatura de sampling. Menor = mas rapido y determinista |
-| `OLLAMA_KEEP_ALIVE` | `30m` | Tiempo que el modelo se mantiene cargado en RAM |
+| `OLLAMA_KEEP_ALIVE` | `10m` | Tiempo que el modelo se mantiene cargado en RAM |
 
 ### RAG
 
 | Variable | Default | Descripcion |
 |---|---|---|
-| `TOP_K` | `3` | Cantidad de fragmentos a recuperar de la base de conocimiento |
+| `TOP_K` | `2` | Cantidad de fragmentos a recuperar de la base de conocimiento |
 | `MAX_QUERY_LENGTH` | `500` | Longitud maxima de la pregunta (caracteres) |
-| `MIN_RELEVANCE_SCORE` | `0.25` | Score minimo de relevancia para incluir un fragmento |
-| `MAX_CHUNK_LENGTH` | `500` | Longitud maxima de cada fragmento enviado al LLM |
+| `MIN_RELEVANCE_SCORE` | `0.10` | Score minimo de relevancia para incluir un fragmento |
+| `MIN_TOP_SCORE_TO_ANSWER` | `0.15` | Score minimo del mejor fragmento; si es menor, responde "no hay info" sin invocar el LLM |
+| `MAX_CHUNK_LENGTH` | `420` | Longitud maxima de cada fragmento enviado al LLM |
+| `MAX_CONTEXT_CHUNKS` | `4` | Maximo de fragmentos enviados como contexto al LLM |
+| `FICTIONAL_SOURCE_PATTERNS` | (vacio) | Patrones de nombres de fuente a tratar como ficticias (separados por coma, p.ej. `cuento,pepita`) |
 
 ### Cache de Respuestas
 
@@ -141,11 +147,13 @@ Todas las opciones se configuran en `config.env`:
 Si el equipo tiene poca RAM o CPU lenta, ajustar en `config.env`:
 
 ```env
+OLLAMA_MODEL=qwen2.5:0.5b # Modelo recomendado para i3/8GB
 OLLAMA_NUM_CTX=1024       # Reduce uso de RAM del modelo
-OLLAMA_NUM_PREDICT=256    # Respuestas mas cortas y rapidas
+OLLAMA_NUM_PREDICT=110    # Respuestas mas cortas y rapidas
 TOP_K=2                   # Menos fragmentos comparados
-MAX_CHUNK_LENGTH=300      # Menos tokens enviados al LLM
-OLLAMA_KEEP_ALIVE=5m      # Libera RAM antes
+MAX_CHUNK_LENGTH=420      # Menos tokens enviados al LLM
+MAX_CONTEXT_CHUNKS=4      # Contexto compacto desde knowledge.db
+OLLAMA_KEEP_ALIVE=10m     # Mantiene qwen2.5:0.5b caliente sin ocupar mucho
 ```
 
 ## Arquitectura
@@ -173,11 +181,14 @@ Pregunta --> Sanitizacion --> Cache hit? --> Respuesta instantanea
                                   |
                    Embedding (384d, asyncio.to_thread)
                                   |
-                     Busqueda vectorial (top_k)
+                     Busqueda vectorial + BM25 reranking
                                   |
-                   Filtrado por relevancia
+                   Filtrado por relevancia (MIN_RELEVANCE_SCORE)
+                   Filtro de fuentes ficticias (FICTIONAL_SOURCE_PATTERNS)
                                   |
               Sin chunks? --> Respuesta directa (sin LLM)
+                                  |
+          Confianza baja? (MIN_TOP_SCORE_TO_ANSWER) --> "No hay info" (sin LLM)
                                   |
                          Contexto al LLM (Ollama)
                          [retry + circuit breaker]
@@ -226,7 +237,9 @@ SisacademiChat/
 ├── config.env.example        # Plantilla de configuracion
 ├── requirements.txt          # Dependencias Python
 ├── run.bat                   # Instala lo que falta e inicia el servicio
-└── stop.bat                  # Detencion del servicio
+├── stop.bat                  # Detencion del servicio
+├── benchmark_full_kb.py      # Benchmark de calidad RAG contra knowledge.db
+└── preguntas_bd_conocimiento.json  # Banco de preguntas para el benchmark
 ```
 
 ## API Endpoints

@@ -155,6 +155,7 @@ def search(query_embedding: list[float], query_text: str | None = None, top_k: i
     pool_size = max(top_k * 8, 24)
     dense_results = _search_dense(query_embedding, pool_size)
     lexical_results = _search_keyword(query_text or "", pool_size) if query_text else []
+    has_lexical_results = bool(lexical_results)
 
     query_terms = _extract_terms(query_text or "")
     query_phrase = _normalize_phrase(query_text or "")
@@ -197,6 +198,13 @@ def search(query_embedding: list[float], query_text: str | None = None, top_k: i
             + all_terms_boost
             + phrase_boost
         )
+        # BM25 reranker: penaliza chunks recuperados solo por similitud semantica
+        # cuando FTS5 SÍ encontró resultados para la consulta (es decir, hay soporte
+        # lexical posible pero este chunk no lo tiene → probable falso positivo).
+        # NO penalizar cuando FTS5 no encontró nada (p.ej. query español vs PDF en inglés),
+        # porque en ese caso la ausencia de keyword_score no indica irrelevancia.
+        if query_terms and has_lexical_results and keyword_score == 0.0:
+            entry["score"] = max(0.0, entry["score"] - 0.06)
 
     ranked = sorted(
         combined.values(),

@@ -13,7 +13,7 @@ set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VERSION%/python-%PYTHO
 set "MAX_RETRIES=3"
 set "PORT=8090"
 set "HOST=127.0.0.1"
-set "OLLAMA_MODEL=qwen2.5:3b"
+set "OLLAMA_MODEL=qwen2.5:0.5b"
 set "OLLAMA_MODEL_FAST="
 set "OLLAMA_MODEL_SMART="
 

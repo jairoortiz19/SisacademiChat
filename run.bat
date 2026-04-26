@@ -13,15 +13,17 @@ set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VERSION%/python-%PYTHO
 set "MAX_RETRIES=3"
 set "PORT=8090"
 set "HOST=127.0.0.1"
-set "OLLAMA_MODEL=qwen2.5:3b"
+set "OLLAMA_MODEL=qwen2.5:0.5b"
 set "OLLAMA_MODEL_FAST="
+set "OLLAMA_MODEL_MEDIUM="
 set "OLLAMA_MODEL_SMART="
 
-for /f "tokens=2 delims==" %%a in ('findstr /i "^PORT=" config.env 2^>nul') do set "PORT=%%a"
-for /f "tokens=2 delims==" %%a in ('findstr /i "^HOST=" config.env 2^>nul') do set "HOST=%%a"
-for /f "tokens=2 delims==" %%a in ('findstr /i "^OLLAMA_MODEL=" config.env 2^>nul') do set "OLLAMA_MODEL=%%a"
-for /f "tokens=2 delims==" %%a in ('findstr /i "^OLLAMA_MODEL_FAST=" config.env 2^>nul') do set "OLLAMA_MODEL_FAST=%%a"
-for /f "tokens=2 delims==" %%a in ('findstr /i "^OLLAMA_MODEL_SMART=" config.env 2^>nul') do set "OLLAMA_MODEL_SMART=%%a"
+for /f "tokens=2 delims==# " %%a in ('findstr /i "^PORT=" config.env 2^>nul') do set "PORT=%%a"
+for /f "tokens=2 delims==# " %%a in ('findstr /i "^HOST=" config.env 2^>nul') do set "HOST=%%a"
+for /f "tokens=2 delims==# " %%a in ('findstr /i "^OLLAMA_MODEL=" config.env 2^>nul') do set "OLLAMA_MODEL=%%a"
+for /f "tokens=2 delims==# " %%a in ('findstr /i "^OLLAMA_MODEL_FAST=" config.env 2^>nul') do set "OLLAMA_MODEL_FAST=%%a"
+for /f "tokens=2 delims==# " %%a in ('findstr /i "^OLLAMA_MODEL_MEDIUM=" config.env 2^>nul') do set "OLLAMA_MODEL_MEDIUM=%%a"
+for /f "tokens=2 delims==# " %%a in ('findstr /i "^OLLAMA_MODEL_SMART=" config.env 2^>nul') do set "OLLAMA_MODEL_SMART=%%a"
 
 echo ============================================
 echo   SisacademiChat - Chatbot Educativo RAG
@@ -90,11 +92,21 @@ if "!OLLAMA_OK!"=="1" (
             call :pull_if_missing "!OLLAMA_MODEL_FAST!"
         )
     )
-    REM Modelo inteligente (si esta definido y es distinto)
+    REM Modelo intermedio (si esta definido y es distinto a los anteriores)
+    if defined OLLAMA_MODEL_MEDIUM (
+        if "!OLLAMA_MODEL_MEDIUM!" neq "!OLLAMA_MODEL!" (
+            if "!OLLAMA_MODEL_MEDIUM!" neq "!OLLAMA_MODEL_FAST!" (
+                call :pull_if_missing "!OLLAMA_MODEL_MEDIUM!"
+            )
+        )
+    )
+    REM Modelo inteligente (si esta definido y es distinto a los anteriores)
     if defined OLLAMA_MODEL_SMART (
         if "!OLLAMA_MODEL_SMART!" neq "!OLLAMA_MODEL!" (
             if "!OLLAMA_MODEL_SMART!" neq "!OLLAMA_MODEL_FAST!" (
-                call :pull_if_missing "!OLLAMA_MODEL_SMART!"
+                if "!OLLAMA_MODEL_SMART!" neq "!OLLAMA_MODEL_MEDIUM!" (
+                    call :pull_if_missing "!OLLAMA_MODEL_SMART!"
+                )
             )
         )
     )

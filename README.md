@@ -25,7 +25,21 @@ El sistema utiliza modelos locales (**Ollama**) para privacidad y eficiencia, y 
 
 ## Instalacion
 
-### Inicio (primera vez y siguientes)
+### En un PC nuevo (sin git, sin nada)
+
+Descarga `install.bat` y ejecutalo con doble clic. Hace todo solo:
+
+1. Descarga el repositorio desde GitHub (sin necesitar git)
+2. Instala Ollama, Python embebido, dependencias y el modelo LLM
+3. Genera un `DEVICE_ID` unico para esa maquina
+4. Escribe `config.env` con la configuracion lista
+5. Inicia el servicio automaticamente
+
+El chat queda corriendo en `http://127.0.0.1:8090` al finalizar.
+
+Si ya esta instalado en `C:\Sitios\SisacademiChat`, ofrece reinstalar conservando `python\` y `config.env` para no rebajar todo.
+
+### Inicio (pc ya configurado)
 
 ```bash
 git clone https://github.com/jairoortiz19/SisacademiChat.git
@@ -64,7 +78,8 @@ Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si alg
 
 | Script | Descripcion |
 |---|---|
-| `run.bat` | Instala lo que falta e inicia el servicio |
+| `install.bat` | Instalador completo para PC nuevo — descarga todo e inicia el chat |
+| `run.bat` | Instala lo que falta e inicia el servicio (PC ya configurado) |
 | `stop.bat` | Detiene el servicio de forma segura |
 
 ### Manejo automatico de errores
@@ -236,6 +251,7 @@ SisacademiChat/
 ├── config.env                # Configuracion local
 ├── config.env.example        # Plantilla de configuracion
 ├── requirements.txt          # Dependencias Python
+├── install.bat               # Instalador completo para PC nuevo (descarga repo + config + inicia)
 ├── run.bat                   # Instala lo que falta e inicia el servicio
 ├── stop.bat                  # Detencion del servicio
 ├── benchmark_full_kb.py      # Benchmark de calidad RAG contra knowledge.db

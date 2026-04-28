@@ -79,6 +79,7 @@ if exist "%INSTALL_DIR%\run.bat" (
     if /i "!REINSTALL!" neq "S" goto :write_config
     echo.
     echo   Conservando python\ y config.env para acelerar reinstalacion...
+    set "REINSTALLING=1"
     if exist "%INSTALL_DIR%\python" (
         move "%INSTALL_DIR%\python" "%TEMP%\sisacademi_python_bak" >nul 2>&1
     )
@@ -264,6 +265,18 @@ REM ============================================================
 REM  Salida de error
 REM ============================================================
 :error_exit
+REM Si fallo durante un reinstall, restaurar la instalacion anterior
+if "!REINSTALLING!"=="1" (
+    echo   Restaurando instalacion anterior...
+    if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
+    if exist "%TEMP%\sisacademi_python_bak" (
+        move "%TEMP%\sisacademi_python_bak" "%INSTALL_DIR%\python" >nul 2>&1
+    )
+    if exist "%TEMP%\sisacademi_config_bak.env" (
+        move "%TEMP%\sisacademi_config_bak.env" "%INSTALL_DIR%\config.env" >nul 2>&1
+    )
+    echo   Instalacion anterior restaurada. El servicio no fue afectado.
+)
 echo.
 echo ============================================
 echo   ERROR - Instalacion fallida.

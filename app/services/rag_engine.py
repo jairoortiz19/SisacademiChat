@@ -785,7 +785,7 @@ async def query(
             "tokens_out": 0,
             "latency_ms": latency_ms,
         }
-        asyncio.get_event_loop().run_in_executor(
+        asyncio.get_running_loop().run_in_executor(
             None,
             lambda: _safe_log(conversation_id, clean_message, _NO_INFO_ANSWER, [], 0, 0, latency_ms),
         )
@@ -955,7 +955,8 @@ async def query(
     latency_ms = int((time.time() - start_time) * 1000)
     query_cache.set(clean_message, top_k, {"sources": sources_data, "answer": answer_text})
 
-    asyncio.get_event_loop().run_in_executor(
+    # 11. Registrar log en background (no retrasa la respuesta)
+    asyncio.get_running_loop().run_in_executor(
         None,
         lambda: _safe_log(
             conversation_id,

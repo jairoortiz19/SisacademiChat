@@ -1,5 +1,16 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(where python *)",
+      "Bash(curl -s --max-time 3 http://localhost:11434/api/tags)",
+      "Bash(wmic cpu *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(wmic memorychip *)",
+      "Bash(wmic logicaldisk *)",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List; \\(Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum\\).Sum / 1GB; Get-PSDrive C | Select-Object Used,Free\")",
+      "Bash(xargs ls *)"
+    ],
     "additionalDirectories": [
       "c:\\Sitios"
     ]

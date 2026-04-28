@@ -177,20 +177,22 @@ REM ============================================================
 echo.
 echo [4/5] Configurando...
 
-REM Si hay un config.env de backup (reinstalacion), restaurarlo y usarlo tal cual
+REM Si hay backup de reinstalacion, extraer solo el DEVICE_ID y escribir config fresco
 if exist "%TEMP%\sisacademi_config_bak.env" (
-    move "%TEMP%\sisacademi_config_bak.env" "%INSTALL_DIR%\config.env" >nul 2>&1
-    echo   config.env restaurado desde instalacion anterior.
-    goto :launch
+    for /f "tokens=2 delims==" %%a in ('findstr /i "^DEVICE_ID=" "%TEMP%\sisacademi_config_bak.env" 2^>nul') do set "CFG_DEVICE_ID=%%a"
+    del "%TEMP%\sisacademi_config_bak.env" 2>nul
+    if defined CFG_DEVICE_ID echo   DEVICE_ID preservado: !CFG_DEVICE_ID!
 )
 
-REM Si ya existe config.env (caso: se salto la descarga), conservarlo
+REM Si se salto la descarga (usuario dijo N), conservar config.env tal cual
 if exist "%INSTALL_DIR%\config.env" (
-    echo   config.env existente conservado.
-    goto :launch
+    if "!REINSTALLING!" neq "1" (
+        echo   config.env existente conservado.
+        goto :launch
+    )
 )
 
-REM Preservar DEVICE_ID si existe en la instalacion actual
+REM Preservar DEVICE_ID desde config existente si aun no esta definido
 if "!CFG_DEVICE_ID!"=="" (
     if exist "%INSTALL_DIR%\config.env" (
         for /f "tokens=2 delims==" %%a in ('findstr /i "^DEVICE_ID=" "%INSTALL_DIR%\config.env" 2^>nul') do set "CFG_DEVICE_ID=%%a"

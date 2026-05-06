@@ -16,9 +16,9 @@
 
 ## Instalacion en PC nuevo
 
-### Paso 1 — Descargar el instalador
+### Paso 1 — Obtener el instalador
 
-Descargar `install.bat` desde el repositorio y guardarlo en cualquier ubicacion (Escritorio, unidad USB, etc.).
+Obtener `install.bat`  y guardarlo en cualquier ubicacion (Escritorio, unidad USB, etc.).
 
 ### Paso 2 — Ejecutar
 
@@ -52,7 +52,7 @@ Al finalizar, la terminal muestra:
 ============================================
 ```
 
-Abrir `http://127.0.0.1:8090/health` en el navegador debe retornar `{"status":"ok",...}`.
+Abrir `http://127.0.0.1:8090/api/v1/health` en el navegador debe retornar `{"status":"ok",...}`.
 
 ---
 
@@ -133,7 +133,7 @@ X-API-Key: <valor-de-API_KEY-en-config.env>
 Antes de hacer peticiones, consultar el health check:
 
 ```bash
-curl http://127.0.0.1:8090/health
+curl http://127.0.0.1:8090/api/v1/health
 ```
 
 Respuesta esperada:

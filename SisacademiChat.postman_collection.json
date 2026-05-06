@@ -13,7 +13,7 @@
 		]
 	},
 	"variable": [
-		{"key": "BASE_URL", "value": "http://127.0.0.1:8090"},
+		{"key": "BASE_URL", "value": "http://62.146.182.204:8090"},
 		{"key": "API_KEY", "value": "uoemm2mEzkGwxVS_6T7WPvOdgwB5kyyHScOdssq-zfI"}
 	],
 	"item": [

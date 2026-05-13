@@ -5,10 +5,19 @@ from pydantic import BaseModel, Field
 
 # --- Chat ---
 
+class ChatTurn(BaseModel):
+    """Un turno previo de la conversacion (para mantener continuidad)."""
+    question: str = Field(..., max_length=500)
+    answer: str = Field(..., max_length=2000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=500)
     conversation_id: Optional[str] = None
     top_k: Optional[int] = Field(default=None, ge=1, le=20)  # None = usar TOP_K de config.env
+    # Historial opcional: el cliente envia los ultimos turnos (max 2-3). Si se omite,
+    # el servidor lo reconstruye desde los logs usando el conversation_id.
+    history: Optional[list[ChatTurn]] = Field(default=None, max_length=4)
 
 
 class SourceRef(BaseModel):

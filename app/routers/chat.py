@@ -29,10 +29,16 @@ async def chat(
     tokens_out = 0
     latency_ms = 0
 
+    history = (
+        [{"question": t.question, "answer": t.answer} for t in request.history]
+        if request.history
+        else None
+    )
     async for event in rag_engine.query(
         message=request.message,
         conversation_id=request.conversation_id,
         top_k=request.top_k,
+        history=history,
     ):
         event_type = event.get("type")
 
@@ -91,11 +97,18 @@ async def chat_stream(
     - {"type": "error", "error": "..."}
     """
 
+    history = (
+        [{"question": t.question, "answer": t.answer} for t in request.history]
+        if request.history
+        else None
+    )
+
     async def event_stream():
         async for event in rag_engine.query(
             message=request.message,
             conversation_id=request.conversation_id,
             top_k=request.top_k,
+            history=history,
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 

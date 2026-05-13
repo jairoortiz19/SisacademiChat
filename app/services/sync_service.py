@@ -146,6 +146,15 @@ async def sync_knowledge_base() -> dict:
     init_knowledge_db()
     new_stats = vector_store.get_stats()
 
+    # 5. Invalidar el cache de respuestas — la KB cambio, las respuestas viejas
+    # pueden ser obsoletas o haber sido generadas por otro modelo/configuracion.
+    try:
+        from app.services.query_cache import query_cache
+        query_cache.clear()
+        logger.info("Query cache invalidado tras sync de KB")
+    except Exception as exc:
+        logger.warning("No se pudo invalidar query_cache: %s", exc)
+
     return {
         "status": "ok",
         "message": "Base de conocimiento actualizada",

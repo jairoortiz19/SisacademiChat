@@ -95,6 +95,25 @@ def get_sync_status() -> dict:
     }
 
 
+def get_recent_turns(conversation_id: str, limit: int = 2) -> list[dict]:
+    """Devuelve los ultimos `limit` turnos previos de una conversacion (mas viejo primero).
+
+    Usado para inyectar memoria corta en el prompt del LLM y mantener continuidad
+    sin que el cliente tenga que reenviar el historial.
+    """
+    if not conversation_id:
+        return []
+    conn = get_logs_db()
+    rows = conn.execute(
+        """SELECT question, answer FROM usage_logs
+           WHERE conversation_id = ?
+           ORDER BY created_at DESC
+           LIMIT ?""",
+        (conversation_id, limit),
+    ).fetchall()
+    return [{"question": r["question"], "answer": r["answer"]} for r in reversed(rows)]
+
+
 def get_total_queries() -> int:
     """Retorna el total de queries realizados."""
     conn = get_logs_db()

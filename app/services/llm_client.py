@@ -15,6 +15,18 @@ _RETRY_DELAYS = [1.0, 2.0]   # segundos entre reintentos (max 2 intentos extra)
 _CB_THRESHOLD = 3             # fallos consecutivos para abrir el circuit breaker
 _CB_RESET = 30.0              # segundos antes de volver a intentar tras abrir
 
+# Stop sequences: cortan generacion si el modelo intenta divagar o continuar el dialogo.
+# Cubren los patrones tipicos en que llama/qwen siguen escribiendo despues de la respuesta.
+_STOP_SEQUENCES = [
+    "\nPregunta:", "\nQuestion:",
+    "\nPregunta del estudiante:", "\nStudent question:",
+    "\nContexto:", "\nContext:",
+    "\nNota:", "\nNote:",
+    "\nUsuario:", "\nUser:",
+    "\n---\n",
+    "<|im_end|>", "<|endoftext|>",
+]
+
 
 @dataclass
 class LLMStats:
@@ -89,6 +101,7 @@ class OllamaClient:
                 "num_ctx": settings.OLLAMA_NUM_CTX,
                 "num_predict": settings.OLLAMA_NUM_PREDICT,
                 "temperature": settings.OLLAMA_TEMPERATURE,
+                "stop": _STOP_SEQUENCES,
             },
         }
 

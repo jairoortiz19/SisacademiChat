@@ -7,40 +7,56 @@
 | Requisito | Detalle |
 |---|---|
 | Sistema operativo | Windows 10 (build 1803+) o Windows 11, 64-bit |
-| RAM minima | 4 GB (recomendado 8 GB) |
-| Disco | ~3 GB libres (Python + modelo Ollama + embeddings) |
-| Internet | Requerido solo en la primera instalacion |
+| RAM minima | 4 GB (recomendado 8 GB+) |
+| Disco | ~5 GB libres (Python embebido + Ollama + 2 modelos LLM + embeddings + KB) |
+| Internet | Requerido solo en la primera instalacion (descarga ~3 GB) |
 | Software previo | Ninguno — el instalador descarga todo automaticamente |
+
+**Modelos descargados automaticamente:**
+- `qwen2.5:1.5b` (~1 GB) — chat de estudiantes en espanol
+- `llama3.2:1b` (~1.3 GB) — chat de estudiantes en ingles
+- `paraphrase-multilingual-MiniLM-L12-v2` (~46 MB) — embeddings vectoriales
 
 ---
 
 ## Instalacion en PC nuevo
 
-### Paso 1 — Obtener el instalador
+Hay **3 caminos** segun el escenario. El **Camino 1 es el recomendado** para despliegues estandar.
 
-Obtener `install.bat`  y guardarlo en cualquier ubicacion (Escritorio, unidad USB, etc.).
+### Camino 1 — Instalador automatico (Recomendado)
 
-### Paso 2 — Ejecutar
+Descarga el repo, escribe `config.env` con valores correctos y arranca el servicio. Sin pasos manuales.
+
+#### Paso 1 — Obtener `install.bat`
+
+Opcion A (terminal):
+```cmd
+curl -L -o install.bat https://raw.githubusercontent.com/jairoortiz19/SisacademiChat/main/install.bat
+```
+
+Opcion B (manual): descargar `install.bat` desde el repositorio y guardarlo en cualquier ubicacion (Escritorio, USB, etc.).
+
+#### Paso 2 — Ejecutar
 
 Doble clic en `install.bat`. El proceso es completamente automatico:
 
 ```
 [1/5] Verificando requisitos del sistema
 [2/5] Descargando repositorio desde GitHub
-[3/5] Extrayendo archivos
-[4/5] Escribiendo configuracion (config.env)
+[3/5] Extrayendo archivos en C:\Sitios\SisacademiChat
+[4/5] Escribiendo configuracion (config.env con todos los valores)
 [5/5] Iniciando SisacademiChat
-        └── [1/6] Ollama
-        └── [2/6] Servicio Ollama y modelos LLM
-        └── [3/6] Python embebido
+        └── [1/6] Ollama (instala si falta)
+        └── [2/6] Servicio Ollama y descarga de modelos LLM
+        └── [3/6] Python 3.12 embebido (portable)
         └── [4/6] Dependencias Python
         └── [5/6] Base de datos y embeddings
-        └── [6/6] Servicio HTTP
+        └── [6/6] Servicio HTTP en puerto 8090
 ```
 
-La primera instalacion tarda entre **5 y 20 minutos** dependiendo de la conexion a internet (descarga el modelo LLM ~500 MB y el modelo de embeddings ~46 MB).
+La primera instalacion tarda **10-20 minutos** segun la conexion a internet (descarga ~3 GB entre Ollama, los 2 modelos LLM y el modelo de embeddings).
 
-### Paso 3 — Verificar
+#### Paso 3 — Verificar
 
 Al finalizar, la terminal muestra:
 
@@ -53,6 +69,44 @@ Al finalizar, la terminal muestra:
 ```
 
 Abrir `http://127.0.0.1:8090/api/v1/health` en el navegador debe retornar `{"status":"ok",...}`.
+
+#### Reinstalacion / actualizacion
+
+Volver a ejecutar `install.bat` y responder `S` cuando pregunta. Comportamiento:
+- Descarga la version mas reciente del repo desde GitHub.
+- **Conserva** `python\` (evita re-descargar 25 MB) y el `DEVICE_ID` original.
+- **Reescribe** el resto de `config.env` con los valores actualizados de la nueva version.
+- Si la descarga falla, restaura automaticamente la instalacion anterior.
+
+### Camino 2 — `git clone` + `run.bat` (manual, mas control)
+
+Para desarrolladores o cuando se necesita personalizar antes del primer arranque:
+
+```cmd
+git clone https://github.com/jairoortiz19/SisacademiChat.git C:\Sitios\SisacademiChat
+cd C:\Sitios\SisacademiChat
+copy config.env.example config.env
+notepad config.env       REM Editar API_KEY, SERVER_URL, SERVER_API_KEY antes de arrancar
+run.bat
+```
+
+`run.bat` lee `config.env` y descarga lo que falte. Si `config.env` no existe, usa los defaults hardcoded en el script (que apuntan a los modelos correctos).
+
+### Camino 3 — Clonar instalacion existente (transferir entre maquinas)
+
+Util cuando ya hay una maquina funcionando y quieres replicarla sin descargas:
+
+1. **Copiar la carpeta completa** `C:\Sitios\SisacademiChat\` (incluye `python\`, `data\`, todo).
+2. **En la maquina destino:**
+   - Borrar `data\logs.db` (logs de la maquina vieja, no son utiles).
+   - Editar `config.env` y borrar la linea `DEVICE_ID=...` (se generara uno nuevo en el primer arranque).
+3. **Asegurarse de que Ollama este instalado** y los modelos descargados:
+   ```cmd
+   ollama list
+   REM Debe aparecer qwen2.5:1.5b y llama3.2:1b
+   ```
+   Si falta alguno: `ollama pull qwen2.5:1.5b` y `ollama pull llama3.2:1b`.
+4. Ejecutar `run.bat`.
 
 ---
 
@@ -270,19 +324,39 @@ PORT=8090
 HOST=127.0.0.1
 
 # Autenticacion
-API_KEY=uoemm2mEzkGwxVS_6T7WPvOdgwB5kyyHScOdssq-zfI
+API_KEY=cambiar-esta-clave-en-produccion
 RATE_LIMIT_PER_MINUTE=30
 
-# Modelo LLM (Ollama)
-OLLAMA_MODEL=qwen2.5:0.5b
+# Modelos LLM (Ollama) — routing automatico por idioma de la pregunta
+OLLAMA_MODEL=qwen2.5:1.5b           # base (multilingue, fuerte en espanol)
+OLLAMA_MODEL_FAST=qwen2.5:1.5b      # chat estudiantes (espanol)
+OLLAMA_MODEL_ENGLISH=llama3.2:1b    # chat estudiantes (ingles)
+OLLAMA_MODEL_SMART=qwen2.5:1.5b     # reportes profesor (subir a qwen2.5:3b si hay RAM)
+
+# Anti-alucinacion
+MIN_TOP_SCORE_TO_ANSWER=0.28        # umbral; debajo = "no encontre informacion"
+STRICT_SPANISH_ONLY=false           # true fuerza espanol siempre
 
 # Servidor central (sincronizacion de base de conocimiento)
 SERVER_URL=http://servidor-central:8091
 SERVER_API_KEY=clave-del-servidor
-DEVICE_ID=uuid-unico-de-este-dispositivo
+DEVICE_ID=                          # vacio = se autogenera en el primer arranque
 ```
 
-Para referencia completa de todas las variables ver [API.md](API.md) seccion Configuracion, o el [README.md](README.md).
+Para referencia completa de **todas las 28 variables** ver `config.env.example` en el repo, [API.md](API.md) seccion Configuracion, o el [README.md](README.md) seccion Configuracion.
+
+### Defensas anti-alucinacion incluidas
+
+Por defecto el sistema combina **6 capas** que previenen que el modelo invente contenido fuera del KB:
+
+1. **Pre-filtro off-topic** — preguntas tipo "cuentame un chiste", "que tal el clima", o intentos de jailbreak (`ignora tus instrucciones`) se detectan antes de tocar Ollama.
+2. **Umbral de retrieval** (`MIN_TOP_SCORE_TO_ANSWER`) — si los chunks recuperados tienen scores muy bajos, responde NO_INFO sin invocar el LLM.
+3. **Filtro de fuentes ficticias** (`FICTIONAL_SOURCE_PATTERNS`) — cuentos y narrativa no se usan para preguntas factuales.
+4. **Prompt estricto** — system prompt prohibe inventar y usar conocimiento general.
+5. **Stop sequences** — 13 patrones que cortan la generacion si el modelo intenta divagar (`\nPregunta:`, `\nNota:`, etc.).
+6. **Grounding check post-respuesta** — verifica que las palabras clave de la respuesta aparezcan literalmente en el contexto recuperado. Si overlap < 35%, reemplaza por NO_INFO.
+
+Detalles en `README.md` seccion **Defensas Anti-Alucinacion**.
 
 ---
 
@@ -295,5 +369,8 @@ Para referencia completa de todas las variables ver [API.md](API.md) seccion Con
 | `status: degraded` en `/health` | Ollama no esta corriendo | Ejecutar `ollama serve` o reiniciar con `run.bat` |
 | `knowledge_chunks: 0` | Base de conocimiento vacia | Ejecutar `POST /api/v1/sync/knowledge` con la API key |
 | El servicio se cierra solo | Error en la app | Revisar la terminal para ver el mensaje de error |
-| Respuestas muy lentas | Hardware limitado o modelo grande | Reducir `OLLAMA_NUM_CTX` y `TOP_K` en `config.env` |
+| Respuestas muy lentas | Hardware limitado o modelo grande | Bajar a `qwen2.5:0.5b` en config.env y reducir `OLLAMA_NUM_CTX` |
+| Respuestas cortadas a media frase | `OLLAMA_NUM_PREDICT` muy bajo | Aumentar a `400` o `500` en `config.env` |
+| Demasiados "no encontre informacion" | Umbral muy estricto o KB pobre | Bajar `MIN_TOP_SCORE_TO_ANSWER` (default 0.28) o regenerar KB |
+| Respuestas mezclan espanol/ingles | Modelo pequeno mezclando idiomas | Activar `STRICT_SPANISH_ONLY=true` |
 | `503` en endpoints `/professor/` | Datos academicos no sincronizados | Ejecutar `POST /api/v1/sync/knowledge` |

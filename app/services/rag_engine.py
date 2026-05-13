@@ -1263,7 +1263,7 @@ async def query(
         latency_ms = int((time.time() - start_time) * 1000)
         # Negative cache: cachear tambien las NO_INFO para que repeticiones sean instantaneas
         query_cache.set(clean_message, top_k, {"sources": [], "answer": answer_text})
-        asyncio.get_event_loop().run_in_executor(
+        asyncio.get_running_loop().run_in_executor(
             None,
             lambda: _safe_log(conversation_id, clean_message, answer_text, [], 0, 0, latency_ms),
         )
@@ -1281,7 +1281,7 @@ async def query(
         yield {"type": "sources", "sources": [], "conversation_id": conversation_id}
         yield {"type": "token", "content": answer_text}
         latency_ms = int((time.time() - start_time) * 1000)
-        asyncio.get_event_loop().run_in_executor(
+        asyncio.get_running_loop().run_in_executor(
             None,
             lambda: _safe_log(conversation_id, clean_message, answer_text, [], 0, 0, latency_ms),
         )
@@ -1387,7 +1387,7 @@ async def query(
         yield {"type": "token", "content": answer_text}
         latency_ms = int((time.time() - start_time) * 1000)
         query_cache.set(clean_message, top_k, {"sources": sources_data, "answer": answer_text})
-        asyncio.get_event_loop().run_in_executor(
+        asyncio.get_running_loop().run_in_executor(
             None,
             lambda: _safe_log(conversation_id, clean_message, answer_text,
                               [c["source_name"] for c in primary_chunks], 0, 0, latency_ms),
@@ -1455,7 +1455,7 @@ async def query(
                     yield {"type": "token", "content": piece}
                 latency_ms = int((time.time() - start_time) * 1000)
                 query_cache.set(clean_message, top_k, {"sources": sources_data, "answer": answer_text})
-                asyncio.get_event_loop().run_in_executor(
+                asyncio.get_running_loop().run_in_executor(
                     None,
                     lambda: _safe_log(
                         conversation_id,

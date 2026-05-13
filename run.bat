@@ -26,6 +26,7 @@ for /f "tokens=2 delims==# " %%a in ('findstr /i "^OLLAMA_MODEL_FAST=" config.en
 for /f "tokens=2 delims==# " %%a in ('findstr /i "^OLLAMA_MODEL_ENGLISH=" config.env 2^>nul') do set "OLLAMA_MODEL_ENGLISH=%%a"
 for /f "tokens=2 delims==# " %%a in ('findstr /i "^OLLAMA_MODEL_MEDIUM=" config.env 2^>nul') do set "OLLAMA_MODEL_MEDIUM=%%a"
 for /f "tokens=2 delims==# " %%a in ('findstr /i "^OLLAMA_MODEL_SMART=" config.env 2^>nul') do set "OLLAMA_MODEL_SMART=%%a"
+for /f "tokens=2 delims==# " %%a in ('findstr /i "^SERVER_URL=" config.env 2^>nul') do set "SERVER_URL=%%a"
 
 echo ============================================
 echo   SisacademiChat - Chatbot Educativo RAG
@@ -253,9 +254,31 @@ if %errorlevel% equ 0 (
     )
 )
 
-REM Sincronizar Base de Conocimiento (si hay servidor configurado)
-echo   Sincronizando base de conocimiento...
-"%PYTHON_EXE%" -c "import sys; sys.path.insert(0,'.'); import asyncio; from app.services.sync_service import sync_knowledge_base; r=asyncio.run(sync_knowledge_base()); print('  '+r['message'])" 2>nul
+REM ============================================================
+REM  Sincronizacion con servidor central (KB + logs pendientes)
+REM ============================================================
+if not defined SERVER_URL (
+    echo   Sync: SERVER_URL no configurado, omitiendo sincronizacion.
+    goto :skip_sync
+)
+
+echo   Verificando conexion a %SERVER_URL%...
+curl -s --connect-timeout 5 --max-time 8 -o nul "%SERVER_URL%" 2>nul
+if !errorlevel! neq 0 (
+    REM Reintentar contra el endpoint de health del API que sabemos existe
+    curl -s --connect-timeout 5 --max-time 8 -o nul "%SERVER_URL%/api/v1/health" 2>nul
+    if !errorlevel! neq 0 (
+        echo   Sin conexion al servidor central. Arrancando con KB local.
+        goto :skip_sync
+    )
+)
+echo   Conexion OK.
+
+REM Una sola invocacion de Python: descarga KB + sube logs pendientes.
+echo   Sincronizando KB y logs...
+"%PYTHON_EXE%" -c "import sys; sys.path.insert(0,'.'); import asyncio; from app.services.sync_service import sync_knowledge_base, sync_logs; loop=asyncio.new_event_loop(); kb=loop.run_until_complete(sync_knowledge_base()); print('  KB:   '+kb.get('message','sin mensaje')); lg=loop.run_until_complete(sync_logs()); print('  Logs: '+lg.get('message','sin mensaje')); loop.close()" 2>nul
+
+:skip_sync
 
 echo.
 echo ============================================

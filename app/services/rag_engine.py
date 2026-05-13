@@ -447,6 +447,40 @@ def _is_off_topic_question(question: str) -> bool:
     return False
 
 
+def _extract_history_keywords(history: list[dict] | None, max_words: int = 10) -> str:
+    """Extrae palabras clave del turno anterior para enriquecer la query del retrieval.
+
+    Sin esto, una pregunta de seguimiento como "dame un ejemplo" hace un embedding
+    de solo esas palabras y trae chunks irrelevantes. Inyectando las keywords del
+    turno previo, el embedding queda anclado al tema en curso.
+    """
+    if not history:
+        return ""
+    last = history[-1]
+    last_q = (last.get("question") or "").strip()
+    last_a = (last.get("answer") or "").strip()
+
+    # Pregunta previa pesa mas (es la intent del usuario). Respuesta da contexto adicional.
+    text = f"{last_q} {last_a[:300]}"
+    normalized = _normalize_text(text)
+
+    seen: set[str] = set()
+    keywords: list[str] = []
+    for token in _TEXT_TOKEN_RE.findall(normalized):
+        if (
+            token in _STOPWORDS
+            or token in _ENGLISH_LANGUAGE_MARKERS
+            or token in seen
+            or len(token) < 4
+        ):
+            continue
+        seen.add(token)
+        keywords.append(token)
+        if len(keywords) >= max_words:
+            break
+    return " ".join(keywords)
+
+
 def _build_history_block(history: list[dict] | None, answer_language: AnswerLanguage) -> str:
     """Construye un bloque corto con los ultimos turnos de conversacion.
 
@@ -1253,6 +1287,18 @@ async def query(
         except Exception as exc:
             logger.debug("No se pudo cargar historia previa: %s", exc)
             history = None
+
+    # Enriquecer el retrieval con keywords del turno anterior cuando la pregunta
+    # actual es muy corta o ambigua ("dame un ejemplo", "y por que?", etc.).
+    # Sin esto, el embedding de la pregunta aislada trae chunks irrelevantes.
+    if history:
+        # Solo enriquecer si la pregunta actual es corta o no tiene keywords propios fuertes.
+        actual_keywords = _extract_query_terms(retrieval_message)
+        if len(actual_keywords) <= 3:
+            history_keywords = _extract_history_keywords(history, max_words=8)
+            if history_keywords:
+                logger.debug("Enriqueciendo retrieval con keywords previas: %s", history_keywords)
+                retrieval_message = f"{retrieval_message} {history_keywords}"
 
     # Filtro off-topic / jailbreak: bloquear ANTES del embedding+LLM para ahorrar compute.
     if _is_off_topic_question(clean_message):

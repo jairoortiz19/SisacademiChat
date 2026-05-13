@@ -22,7 +22,7 @@ echo.
 echo   Descargara la ultima version del codigo desde GitHub
 echo   y reiniciara el servicio.
 echo.
-echo   PRESERVA: config.env, data\, python\
+echo   PRESER VA: config.env, data\, python\
 echo   ACTUALIZA: app\, *.md, requirements.txt
 echo.
 set "CONFIRM="
@@ -143,22 +143,24 @@ if !RC_ERR! geq 8 (
 )
 echo   app\ actualizado.
 
-REM Copiar archivos sueltos. IMPORTANTE: excluimos update.bat (este script)
-REM para evitar que CMD se confunda al leer un script auto-sobreescrito.
-REM update.bat se actualizara en el proximo update (con la version actual ya descargada).
-for %%f in (run.bat install.bat stop.bat chat.bat firewall.bat) do (
-    if exist "!SRC_DIR!\%%f" (
-        copy /y "!SRC_DIR!\%%f" "%INSTALL_DIR%\%%f" >nul
+REM Copiar TODOS los *.bat del repo EXCEPTO update.bat (este script).
+REM update.bat se maneja aparte abajo (update.bat.new + rename diferido) para evitar
+REM auto-sobreescritura mientras CMD lo esta leyendo. Esta logica es resiliente:
+REM cualquier .bat nuevo que se agregue al repo se actualiza automaticamente.
+for %%f in ("!SRC_DIR!\*.bat") do (
+    if /i not "%%~nxf"=="update.bat" (
+        copy /y "%%f" "%INSTALL_DIR%\%%~nxf" >nul
     )
 )
-for %%f in (README.md INSTALL.md API.md PROMPT_CHAT_CLIENTE.md PANEL_PROFESOR.md) do (
-    if exist "!SRC_DIR!\%%f" (
-        copy /y "!SRC_DIR!\%%f" "%INSTALL_DIR%\%%f" >nul
-    )
+REM Mismo enfoque para docs (.md) y configs/jsons sueltos: glob para no mantener listas.
+for %%f in ("!SRC_DIR!\*.md") do (
+    copy /y "%%f" "%INSTALL_DIR%\%%~nxf" >nul
+)
+for %%f in ("!SRC_DIR!\*.json") do (
+    copy /y "%%f" "%INSTALL_DIR%\%%~nxf" >nul
 )
 if exist "!SRC_DIR!\requirements.txt" copy /y "!SRC_DIR!\requirements.txt" "%INSTALL_DIR%\requirements.txt" >nul
 if exist "!SRC_DIR!\config.env.example" copy /y "!SRC_DIR!\config.env.example" "%INSTALL_DIR%\config.env.example" >nul
-if exist "!SRC_DIR!\SisacademiChat.postman_collection.json" copy /y "!SRC_DIR!\SisacademiChat.postman_collection.json" "%INSTALL_DIR%\SisacademiChat.postman_collection.json" >nul
 
 REM Copiar update.bat con nombre temporal — se renombrara al final (manualmente o al proximo run)
 if exist "!SRC_DIR!\update.bat" (

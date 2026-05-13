@@ -227,6 +227,10 @@ _TARGET_STOPWORDS = {
     "de", "del", "al", "en", "que", "segun", "material", "materiales",
     "curso", "contexto", "estudio", "estudios", "concepto", "definicion",
 }
+_FRACTION_SUBTYPE_CUES = (
+    "fraccion decimal", "fracciones decimales", "fraccion mixta",
+    "numero mixto", "fraccion impropia", "fraccion propia",
+)
 _LIST_CUES = (
     "los principales", "incluye", "incluyen", "se clasifican", "elementos",
     "acciones", "caracteristicas", "fines son",
@@ -627,6 +631,36 @@ def _chunk_has_direct_definition_answer(
     if not all(any(term in text for term in options) for options in term_options):
         return False
 
+    target_variants = set().union(*term_options)
+    fraction_subtype_terms = {"decimal", "decimales", "mixta", "mixto", "impropia", "propia"}
+    plain_fraction_target = (
+        bool(target_variants & {"fraccion", "fracciones"})
+        and not (set(target_terms) & fraction_subtype_terms)
+        and not any(term in target_phrase for term in fraction_subtype_terms)
+    )
+    if target_variants & {"fraccion", "fracciones"}:
+        if plain_fraction_target and any(cue in text for cue in _FRACTION_SUBTYPE_CUES):
+            return False
+
+    if plain_fraction_target and "numerador" in text and "denominador" in text:
+        has_fraction_part_labels = (
+            ("denominador:" in text and "numerador:" in text)
+            or (
+                any(cue in text for cue in ("denominador nos dice", "denominador indica", "denominador senala"))
+                and any(cue in text for cue in ("numerador nos dice", "numerador indica", "numerador cuenta"))
+            )
+        )
+        if not has_fraction_part_labels:
+            return False
+
+        fraction_cues = (
+            "partes iguales", "partes se toman", "partes contamos",
+            "cuantas partes", "cuantos partes", "divide el espacio",
+            "dividimos el tramo", "entero", "unidad",
+        )
+        if any(cue in text for cue in fraction_cues):
+            return True
+
     subject_patterns = _definition_subject_patterns(target_phrase, target_terms)
     cue_pattern = "|".join(re.escape(cue) for cue in _DIRECT_DEFINITION_CUES)
     head_pattern = "|".join(re.escape(noun) for noun in _DEFINITION_HEAD_NOUNS)
@@ -672,6 +706,43 @@ def _definition_context_has_direct_answer(question: str, chunks: list[dict]) -> 
         _chunk_has_direct_definition_answer(chunk, target_phrase, target_terms)
         for chunk in chunks
     )
+
+
+def _is_plain_fraction_definition_question(question: str) -> bool:
+    target_phrase, target_terms = _extract_definition_target(question)
+    if not target_terms:
+        return False
+
+    target_variants = set()
+    for term in target_terms:
+        target_variants.update(_target_term_variants(term))
+    if not (target_variants & {"fraccion", "fracciones"}):
+        return False
+
+    subtype_terms = {"decimal", "decimales", "mixta", "mixto", "impropia", "propia"}
+    return not (set(target_terms) & subtype_terms or any(term in target_phrase for term in subtype_terms))
+
+
+def _chunk_has_fraction_subtype_cue(chunk: dict) -> bool:
+    text = _normalize_text(" ".join(filter(None, [chunk.get("section"), chunk.get("chunk_text")])))
+    return any(cue in text for cue in _FRACTION_SUBTYPE_CUES)
+
+
+def _filter_fraction_subtype_chunks(question: str, chunks: list[dict]) -> list[dict]:
+    """Evita que una definicion general de fraccion se contamine con subtipos."""
+    if not _is_plain_fraction_definition_question(question) or not chunks:
+        return chunks
+
+    target_phrase, target_terms = _extract_definition_target(question)
+    has_direct_support = any(
+        _chunk_has_direct_definition_answer(chunk, target_phrase, target_terms)
+        for chunk in chunks
+    )
+    if not has_direct_support:
+        return chunks
+
+    filtered = [chunk for chunk in chunks if not _chunk_has_fraction_subtype_cue(chunk)]
+    return filtered or chunks
 
 
 def _promote_direct_definition_chunks(question: str, chunks: list[dict]) -> list[dict]:
@@ -1026,6 +1097,37 @@ def _solve_special_numeric_case(
     )
 
 
+def _solve_special_definition_case(
+    question: str,
+    context: str,
+    answer_language: AnswerLanguage = "es",
+) -> str | None:
+    """Resuelve definiciones muy estructuradas para evitar ejemplos inventados."""
+    normalized_context = _normalize_text(context)
+    if (
+        _is_plain_fraction_definition_question(question)
+        and "numerador" in normalized_context
+        and "denominador" in normalized_context
+        and any(
+            cue in normalized_context
+            for cue in ("partes iguales", "cuantas partes", "partes se toman", "partes contamos")
+        )
+    ):
+        if answer_language == "en":
+            return (
+                "A fraction represents parts of a unit or whole divided into equal parts. "
+                "The denominator indicates how many equal parts the unit or whole is divided into, "
+                "and the numerator indicates how many parts are taken or counted."
+            )
+        return (
+            "Una fraccion representa partes de una unidad o de un entero dividido en partes iguales. "
+            "El denominador indica en cuantas partes iguales se divide la unidad o el entero, "
+            "y el numerador indica cuantas partes se toman o se cuentan."
+        )
+
+    return None
+
+
 async def _resolve_smart_model() -> str:
     """Devuelve el modelo configurado para verificacion/reescritura.
 
@@ -1079,6 +1181,8 @@ def _build_context(chunks: list[dict], question: str, intent: QuestionIntent) ->
     configured_max_len = max(settings.MAX_CHUNK_LENGTH, 180)
     if intent == "numeric":
         max_len = max(configured_max_len, 500)
+    elif intent == "definition" and _is_plain_fraction_definition_question(question):
+        max_len = max(configured_max_len, 900)
     elif intent in {"definition", "list", "guidance"}:
         max_len = configured_max_len
     else:
@@ -1297,9 +1401,10 @@ def _stream_text(text: str, chunk_size: int = 140):
         split_at = remaining.rfind(" ", 0, chunk_size)
         if split_at <= 0:
             split_at = chunk_size
-        piece = remaining[:split_at]
+        include_separator = split_at < len(remaining) and remaining[split_at] == " "
+        piece = remaining[:split_at + 1] if include_separator else remaining[:split_at]
         yield piece
-        remaining = remaining[split_at:].lstrip()
+        remaining = remaining[split_at + 1:] if include_separator else remaining[split_at:]
 
 
 async def _collect_model_response(messages: list[dict], model: str) -> tuple[str, LLMStats]:
@@ -1568,6 +1673,7 @@ async def query(
     chunks = _filter_fictional_chunks(chunks, question_intent)
     if question_intent == "definition":
         chunks = _promote_direct_definition_chunks(retrieval_message, chunks)
+        chunks = _filter_fraction_subtype_chunks(retrieval_message, chunks)
 
     if not chunks:
         logger.info("No hay chunks relevantes. Respondiendo sin LLM.")
@@ -1648,6 +1754,8 @@ async def query(
             limit=neighbor_limit,
             max_chunks=max_chunks,
         )
+        if question_intent == "definition":
+            chunks = _filter_fraction_subtype_chunks(retrieval_message, chunks)
 
     if question_intent == "definition" and not _definition_context_has_direct_answer(retrieval_message, chunks):
         logger.info("Definicion sin soporte directo en contexto. NO_INFO sin LLM.")
@@ -1688,6 +1796,38 @@ async def query(
     total_tokens_out = 0
 
     try:
+        deterministic_answer = (
+            _solve_special_definition_case(retrieval_message, context, answer_language)
+            if question_intent == "definition"
+            else None
+        )
+        if deterministic_answer:
+            answer_text = deterministic_answer
+            for piece in _stream_text(answer_text):
+                yield {"type": "token", "content": piece}
+            latency_ms = int((time.time() - start_time) * 1000)
+            query_cache.set(clean_message, top_k, {"sources": sources_data, "answer": answer_text})
+            asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: _safe_log(
+                    conversation_id,
+                    clean_message,
+                    answer_text,
+                    source_names,
+                    total_tokens_in,
+                    total_tokens_out,
+                    latency_ms,
+                ),
+            )
+            yield {
+                "type": "done",
+                "conversation_id": conversation_id,
+                "tokens_in": total_tokens_in,
+                "tokens_out": total_tokens_out,
+                "latency_ms": latency_ms,
+            }
+            return
+
         if deliberate_mode:
             deterministic_answer = (
                 _solve_special_numeric_case(retrieval_message, context, answer_language)

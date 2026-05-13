@@ -196,14 +196,15 @@ MAX_CONTEXT_CHUNKS=6
 
 ## Defensas Anti-Alucinacion
 
-El sistema combina **6 capas** para minimizar invenciones del LLM:
+El sistema combina **7 capas** para minimizar invenciones del LLM:
 
 1. **Pre-filtro off-topic**: Detecta preguntas claramente fuera del scope educativo (chistes, clima, jailbreaks tipo "ignora tus instrucciones") antes de tocar Ollama. Respuesta NO_INFO instantanea.
 2. **Umbral de retrieval**: Si el mejor chunk recuperado tiene score `< MIN_TOP_SCORE_TO_ANSWER` o el promedio de los top chunks es muy bajo, responde NO_INFO sin invocar el LLM.
-3. **Filtro de fuentes ficticias**: Cuentos y narrativa no se usan para preguntas factuales (configurable con `FICTIONAL_SOURCE_PATTERNS`).
-4. **Prompt estricto**: System prompt prohibe explicitamente inventar, usar conocimiento general o completar vacios. Frase canonica fija para "no se".
-5. **Stop sequences**: 13 patrones (`\nPregunta:`, `\nNota:`, etc.) cortan la generacion si el modelo intenta divagar.
-6. **Grounding check post-respuesta**: Verifica que las palabras clave de la respuesta aparezcan literalmente en el contexto recuperado. Si el overlap es < 35%, reemplaza por NO_INFO.
+3. **Validacion de definiciones**: Para preguntas tipo `que es...`, `que son...` o `cuanto es una...`, el retrieval amplia el pool de candidatos, sube chunks con definiciones directas (`X es...`, `X son...`, `X significa...`) y bloquea la respuesta si el contexto solo menciona la palabra sin definirla.
+4. **Filtro de fuentes ficticias**: Cuentos y narrativa no se usan para preguntas factuales (configurable con `FICTIONAL_SOURCE_PATTERNS`).
+5. **Prompt estricto**: System prompt prohibe explicitamente inventar, usar conocimiento general o completar vacios. Frase canonica fija para "no se".
+6. **Stop sequences**: 13 patrones (`\nPregunta:`, `\nNota:`, etc.) cortan la generacion si el modelo intenta divagar.
+7. **Grounding check post-respuesta**: Verifica que las palabras clave de la respuesta aparezcan literalmente en el contexto recuperado. Si el overlap es < 35%, reemplaza por NO_INFO.
 
 ### Memoria conversacional
 

@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import logging
 import math
 import re
@@ -206,6 +207,26 @@ _DEFINITION_CUES = (
     "estan establecidos", "esta establecido", "se explica", "se refiere",
     "consiste", "significa", "para que existe", "los principales fines",
 )
+_DIRECT_DEFINITION_CUES = (
+    "es", "son", "significa", "consiste", "consisten", "se refiere",
+    "se refieren", "se define", "se definen", "corresponde", "corresponden",
+)
+_DEFINITION_HEAD_NOUNS = (
+    "accion", "actividad", "capacidad", "ciencia", "concepto", "conjunto",
+    "derecho", "direccion", "direcciones", "disciplina", "elemento",
+    "estructura", "estructuras", "forma", "herramienta", "mecanismo",
+    "metodo", "numero", "objetivo", "operacion", "palabra", "palabras", "proceso",
+    "programa", "programas", "sistema", "tecnica", "valor",
+)
+_DEFINITION_TARGET_TRAILERS = (
+    " segun ", " de acuerdo ", " en el material", " en los materiales",
+    " en contexto", " en el contexto", " en matematicas", " en matematica",
+)
+_TARGET_STOPWORDS = {
+    "a", "an", "the", "un", "una", "unos", "unas", "el", "la", "los", "las",
+    "de", "del", "al", "en", "que", "segun", "material", "materiales",
+    "curso", "contexto", "estudio", "estudios", "concepto", "definicion",
+}
 _LIST_CUES = (
     "los principales", "incluye", "incluyen", "se clasifican", "elementos",
     "acciones", "caracteristicas", "fines son",
@@ -329,6 +350,16 @@ def _is_numeric_question(question: str) -> bool:
 def _detect_question_intent(question: str) -> QuestionIntent:
     """Clasifica la intencion de la pregunta para ajustar retrieval y respuesta."""
     lowered = question.lower().replace("¿", "").replace("?", "").strip()
+    normalized = _normalize_text(question)
+    if (
+        re.match(
+            r"^(?:cuanto|cuanta|cuantos|cuantas)\s+(?:es|son)\s+"
+            r"(?:un|una|unos|unas|el|la|los|las)\s+[a-z]",
+            normalized,
+        )
+        and not re.search(r"\d", normalized)
+    ):
+        return "definition"
     if _is_numeric_question(question):
         return "numeric"
     if any(hint in lowered for hint in _GUIDANCE_HINTS):
@@ -517,6 +548,151 @@ def _extract_query_terms(question: str) -> list[str]:
         seen.add(raw)
         terms.append(raw)
     return terms
+
+
+def _extract_definition_target(question: str) -> tuple[str, list[str]]:
+    """Extrae el concepto preguntado en formas tipo "que es X"."""
+    normalized = _normalize_text(question).strip(" ?.¿?¡!,:;")
+    match = re.match(
+        r"^(?:que|what|cuanto|cuanta|cuantos|cuantas)\s+(?:es|son|is|are)\s+"
+        r"(?:(?:un|una|unos|unas|el|la|los|las|the|a|an)\s+)?"
+        r"(.+)$",
+        normalized,
+    )
+    if not match:
+        return "", []
+
+    target = match.group(1).strip(" ?.¿?¡!,:;")
+    for trailer in _DEFINITION_TARGET_TRAILERS:
+        if trailer in f" {target} ":
+            target = f" {target} ".split(trailer, 1)[0].strip()
+            break
+
+    words = re.findall(r"[a-z0-9]{2,}", target)
+    content_terms = [
+        word
+        for word in words
+        if word not in _TARGET_STOPWORDS
+        and word not in _STOPWORDS
+        and word not in _ENGLISH_LANGUAGE_MARKERS
+    ]
+    return " ".join(words), content_terms
+
+
+def _target_term_variants(term: str) -> set[str]:
+    variants = {term}
+    if len(term) > 4 and term.endswith("es"):
+        variants.add(term[:-2])
+    if len(term) > 4 and term.endswith("s"):
+        variants.add(term[:-1])
+    return {variant for variant in variants if variant}
+
+
+def _definition_subject_patterns(target_phrase: str, target_terms: list[str]) -> list[str]:
+    """Variantes regex del concepto como sujeto de una definicion."""
+    phrases = []
+    if target_phrase:
+        phrases.append(target_phrase)
+    content_phrase = " ".join(target_terms)
+    if content_phrase and content_phrase not in phrases:
+        phrases.append(content_phrase)
+    if target_terms:
+        variant_groups = [sorted(_target_term_variants(term)) for term in target_terms]
+        for combo in itertools.product(*variant_groups):
+            phrase = " ".join(combo)
+            if phrase and phrase not in phrases:
+                phrases.append(phrase)
+
+    patterns = []
+    article = r"(?:(?:el|la|los|las|un|una|unos|unas|the|a|an)\s+)?"
+    boundary = r"(?:^|[\.;:!?]\s+)"
+    article_boundary = r"(?:^|[^a-z0-9])(?:el|la|los|las|un|una|unos|unas|the|a|an)\s+"
+    for phrase in phrases:
+        escaped = r"\s+".join(re.escape(part) for part in phrase.split())
+        patterns.append(rf"{boundary}{article}{escaped}\b")
+        patterns.append(rf"{article_boundary}{escaped}\b")
+    return patterns
+
+
+def _chunk_has_direct_definition_answer(
+    chunk: dict,
+    target_phrase: str,
+    target_terms: list[str],
+) -> bool:
+    text = _normalize_text(" ".join(filter(None, [chunk.get("section"), chunk.get("chunk_text")])))
+    if not text or not target_terms:
+        return False
+
+    term_options = [_target_term_variants(term) for term in target_terms]
+    if not all(any(term in text for term in options) for options in term_options):
+        return False
+
+    subject_patterns = _definition_subject_patterns(target_phrase, target_terms)
+    cue_pattern = "|".join(re.escape(cue) for cue in _DIRECT_DEFINITION_CUES)
+    head_pattern = "|".join(re.escape(noun) for noun in _DEFINITION_HEAD_NOUNS)
+
+    for subject in subject_patterns:
+        # Direct definitions: "La democracia es...", "Los puntos cardinales son..."
+        if re.search(rf"{subject}\s*:?\s+(?:esto\s+)?(?:{cue_pattern})\b", text):
+            return True
+
+        # Appositive OCR/title definitions: "Democracia Sistema de gobierno..."
+        if re.search(
+            rf"{subject}\s+(?:(?:es|son)\s+)?(?:(?:un|una|el|la|los|las)\s+)?"
+            rf"(?:{head_pattern})\b(?:\s+(?:de|del|que|para|donde|con)\b)?",
+            text,
+        ):
+            return True
+
+    # Some slides define through a nearby "Definicion" label instead of "X es".
+    if "definicion" in text:
+        target_positions = []
+        if target_phrase:
+            pos = text.find(target_phrase)
+            if pos >= 0:
+                target_positions.append(pos)
+        for term in target_terms:
+            pos = text.find(term)
+            if pos >= 0:
+                target_positions.append(pos)
+        def_pos = text.find("definicion")
+        if target_positions and min(abs(pos - def_pos) for pos in target_positions) <= 260:
+            return True
+
+    return False
+
+
+def _definition_context_has_direct_answer(question: str, chunks: list[dict]) -> bool:
+    """Evita responder definiciones cuando el KB solo menciona la palabra."""
+    target_phrase, target_terms = _extract_definition_target(question)
+    if not target_terms:
+        return True
+
+    return any(
+        _chunk_has_direct_definition_answer(chunk, target_phrase, target_terms)
+        for chunk in chunks
+    )
+
+
+def _promote_direct_definition_chunks(question: str, chunks: list[dict]) -> list[dict]:
+    """Sube chunks que parecen responder directamente una pregunta de definicion."""
+    target_phrase, target_terms = _extract_definition_target(question)
+    if not target_terms or not chunks:
+        return chunks
+
+    promoted = []
+    found_direct = False
+    for chunk in chunks:
+        candidate = dict(chunk)
+        if _chunk_has_direct_definition_answer(candidate, target_phrase, target_terms):
+            candidate["score"] = candidate.get("score", 0.0) + 0.45
+            found_direct = True
+        promoted.append(candidate)
+
+    if not found_direct:
+        return chunks
+    promoted.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+    return promoted
 
 
 def _effective_min_score() -> float:
@@ -1374,7 +1550,8 @@ async def query(
         return
 
     try:
-        chunks = vector_store.search(query_embedding, query_text=retrieval_message, top_k=top_k)
+        search_top_k = max(top_k, 30) if question_intent == "definition" else top_k
+        chunks = vector_store.search(query_embedding, query_text=retrieval_message, top_k=search_top_k)
         if not chunks and top_k < 8:
             chunks = vector_store.search(query_embedding, query_text=retrieval_message, top_k=8)
     except Exception as e:
@@ -1389,6 +1566,8 @@ async def query(
 
     # Filtrar fuentes ficticias / narrativas para preguntas factuales
     chunks = _filter_fictional_chunks(chunks, question_intent)
+    if question_intent == "definition":
+        chunks = _promote_direct_definition_chunks(retrieval_message, chunks)
 
     if not chunks:
         logger.info("No hay chunks relevantes. Respondiendo sin LLM.")
@@ -1427,7 +1606,7 @@ async def query(
         logger.info("Retrieval debil (top=%.3f avg=%.3f < umbral=%.3f). NO_INFO sin LLM.",
                     retrieval_top_score, avg_top_score, settings.MIN_TOP_SCORE_TO_ANSWER)
         primary_chunks = chunks[: max(top_k, 1)]
-        sources_data = _build_sources_payload(primary_chunks)
+        sources_data = [] if question_intent == "definition" else _build_sources_payload(primary_chunks)
         answer_text = _no_info_answer(answer_language)
         yield {"type": "sources", "sources": sources_data, "conversation_id": conversation_id}
         yield {"type": "token", "content": answer_text}
@@ -1469,6 +1648,26 @@ async def query(
             limit=neighbor_limit,
             max_chunks=max_chunks,
         )
+
+    if question_intent == "definition" and not _definition_context_has_direct_answer(retrieval_message, chunks):
+        logger.info("Definicion sin soporte directo en contexto. NO_INFO sin LLM.")
+        answer_text = _no_info_answer(answer_language)
+        yield {"type": "sources", "sources": [], "conversation_id": conversation_id}
+        yield {"type": "token", "content": answer_text}
+        latency_ms = int((time.time() - start_time) * 1000)
+        query_cache.set(clean_message, top_k, {"sources": [], "answer": answer_text})
+        asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: _safe_log(conversation_id, clean_message, answer_text, [], 0, 0, latency_ms),
+        )
+        yield {
+            "type": "done",
+            "conversation_id": conversation_id,
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "latency_ms": latency_ms,
+        }
+        return
 
     sources_data = _build_sources_payload(chunks)
     yield {"type": "sources", "sources": sources_data, "conversation_id": conversation_id}

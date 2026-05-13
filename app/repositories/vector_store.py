@@ -26,6 +26,8 @@ _QUERY_QUALIFIER_TERMS = {
 }
 _TERM_CORRECTIONS = {
     "cardenales": "cardinales",
+    "itnegral": "integral",
+    "itnegrales": "integrales",
 }
 _SOURCE_QUALIFIER_ALIASES = {
     "social": ("sociales", "geografia", "historia", "democracia", "constitucion"),

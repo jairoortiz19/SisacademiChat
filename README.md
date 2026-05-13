@@ -84,6 +84,7 @@ Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si alg
 | `install.bat` | Instalacion limpia desde cero. Descarga el repo, escribe `config.env` desde plantilla, instala Ollama/Python/modelos y arranca. **Reinstalar pierde personalizaciones de `config.env`.** |
 | `run.bat` | Inicia el servicio. Si hay internet, sincroniza KB del server y sube logs pendientes antes de arrancar. Instala dependencias faltantes. |
 | `update.bat` | **Actualiza codigo + KB sin perder configuracion.** Detiene servicio, descarga la ultima version desde GitHub, actualiza dependencias, sincroniza KB y reinicia. Preserva `config.env`, `data\`, `python\`. |
+| `firewall.bat` | Abre/cierra el puerto en Windows Firewall para exponer el servicio en LAN/internet. Auto-eleva a admin. Subcomandos: `open` (default), `close`, `status`. |
 | `stop.bat` | Detiene el servicio de forma segura. |
 
 ### Manejo automatico de errores

@@ -157,7 +157,13 @@ El servicio **no arranca automaticamente** con Windows. Para configurar inicio a
 > Por defecto el servicio escucha **solo en localhost**. Para exponerlo en la red local
 > cambiar `HOST=0.0.0.0` en `config.env` y reiniciar con `run.bat`.
 
-### Exponer en red local (opcional)
+### Exponer el servicio (red local o internet)
+
+Por defecto el servicio escucha en `127.0.0.1` (solo localhost) y **el firewall de Windows no permite conexiones externas**.
+
+Para exponerlo se necesitan **dos pasos**:
+
+#### Paso 1 — Cambiar HOST a `0.0.0.0`
 
 Editar `C:\Sitios\SisacademiChat\config.env`:
 
@@ -166,10 +172,44 @@ HOST=0.0.0.0
 PORT=8090
 ```
 
-Reiniciar el servicio. Otros equipos en la misma red podran acceder via:
+Esto hace que uvicorn escuche en todas las interfaces de red.
+
+#### Paso 2 — Abrir el puerto en Windows Firewall
+
+```cmd
+firewall.bat
 ```
-http://<IP-del-PC>:8090/api/v1
+
+`firewall.bat` se auto-eleva a administrador via UAC y crea la regla `SisacademiChat` que permite TCP entrante al puerto configurado. Subcomandos:
+
+| Comando | Que hace |
+|---|---|
+| `firewall.bat` o `firewall.bat open` | Crea/recrea la regla |
+| `firewall.bat close` | Borra la regla (cierra el puerto) |
+| `firewall.bat status` | Muestra el estado actual |
+
+Reiniciar el servicio. Otros equipos en la **misma red** podran acceder via:
 ```
+http://<IP-LAN-del-PC>:8090/api/v1
+```
+
+Si `run.bat` detecta `HOST=0.0.0.0` sin regla de firewall, avisa al arrancar.
+
+#### Paso 3 (solo internet publico) — Port forwarding en el router
+
+Para que el servicio sea accesible desde **fuera** de la red local:
+
+1. Entrar al panel del router.
+2. Configurar port forwarding: `IP-publica:8090` → `IP-LAN-del-PC:8090` (TCP).
+3. Probar desde otro lugar:
+   ```
+   curl http://<IP-publica>:8090/api/v1/health -H "X-API-Key: <tu-api-key>"
+   ```
+
+> **AVISO de seguridad:** sin HTTPS la `API_KEY` viaja en texto plano. Para uso publico real:
+> - Regenera la `API_KEY` antes de exponer (la actual ya pudo haber quedado en repos/logs).
+> - Pon un reverse proxy con HTTPS delante (Caddy es el mas simple: maneja certificados Let's Encrypt automaticamente).
+> - Limita CORS si solo un cliente conocido va a consumir (`ALLOWED_ORIGINS` esta en `app/main.py`).
 
 ---
 

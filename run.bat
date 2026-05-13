@@ -33,6 +33,17 @@ echo   SisacademiChat - Chatbot Educativo RAG
 echo ============================================
 echo.
 
+REM Si HOST=0.0.0.0, verificar que existe la regla de firewall.
+if "%HOST%"=="0.0.0.0" (
+    netsh advfirewall firewall show rule name="SisacademiChat" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo   AVISO: HOST=0.0.0.0 pero NO existe la regla de firewall.
+        echo   El servicio escuchara pero Windows Firewall bloqueara conexiones externas.
+        echo   Ejecuta firewall.bat como administrador para abrir el puerto %PORT%.
+        echo.
+    )
+)
+
 REM ============================================================
 REM  [1/6] Ollama instalado?
 REM ============================================================

@@ -146,7 +146,7 @@ echo   app\ actualizado.
 REM Copiar archivos sueltos. IMPORTANTE: excluimos update.bat (este script)
 REM para evitar que CMD se confunda al leer un script auto-sobreescrito.
 REM update.bat se actualizara en el proximo update (con la version actual ya descargada).
-for %%f in (run.bat install.bat stop.bat chat.bat) do (
+for %%f in (run.bat install.bat stop.bat chat.bat firewall.bat) do (
     if exist "!SRC_DIR!\%%f" (
         copy /y "!SRC_DIR!\%%f" "%INSTALL_DIR%\%%f" >nul
     )

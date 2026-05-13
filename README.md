@@ -81,9 +81,10 @@ Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si alg
 
 | Script | Descripcion |
 |---|---|
-| `install.bat` | Instalador completo para PC nuevo — descarga todo e inicia el chat |
-| `run.bat` | Instala lo que falta e inicia el servicio (PC ya configurado) |
-| `stop.bat` | Detiene el servicio de forma segura |
+| `install.bat` | Instalacion limpia desde cero. Descarga el repo, escribe `config.env` desde plantilla, instala Ollama/Python/modelos y arranca. **Reinstalar pierde personalizaciones de `config.env`.** |
+| `run.bat` | Inicia el servicio. Si hay internet, sincroniza KB del server y sube logs pendientes antes de arrancar. Instala dependencias faltantes. |
+| `update.bat` | **Actualiza codigo + KB sin perder configuracion.** Detiene servicio, descarga la ultima version desde GitHub, actualiza dependencias, sincroniza KB y reinicia. Preserva `config.env`, `data\`, `python\`. |
+| `stop.bat` | Detiene el servicio de forma segura. |
 
 ### Manejo automatico de errores
 

@@ -133,11 +133,12 @@ C:\Sitios\SisacademiChat\
 
 ## Iniciar y detener el servicio
 
-| Accion | Comando |
-|---|---|
-| Iniciar | Doble clic en `C:\Sitios\SisacademiChat\run.bat` |
-| Detener | Doble clic en `C:\Sitios\SisacademiChat\stop.bat` o `Ctrl+C` en la terminal |
-| Reinstalar / actualizar | Doble clic en `install.bat` → seleccionar `S` |
+| Accion | Comando | Que hace |
+|---|---|---|
+| Iniciar | Doble clic en `C:\Sitios\SisacademiChat\run.bat` | Arranca el servicio. Si hay internet, sincroniza KB del server y sube logs pendientes antes de arrancar. |
+| Detener | Doble clic en `C:\Sitios\SisacademiChat\stop.bat` o `Ctrl+C` en la terminal | Detiene el servicio. |
+| **Actualizar codigo + KB** | Doble clic en `update.bat` | Detiene el servicio, descarga la ultima version del codigo desde GitHub, actualiza dependencias, sincroniza KB del server, reinicia. **PRESERVA `config.env`, `data\`, `python\`**. |
+| Reinstalar (limpio) | Doble clic en `install.bat` → `S` | Borra todo (excepto `python\` y `DEVICE_ID`), descarga repo desde cero, escribe `config.env` nuevo desde plantilla. **Pierde personalizaciones de `config.env`**. |
 
 El servicio **no arranca automaticamente** con Windows. Para configurar inicio automatico, crear una tarea en el Programador de tareas de Windows apuntando a `run.bat`.
 

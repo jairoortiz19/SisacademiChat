@@ -35,7 +35,7 @@ set "CFG_MAX_CHUNK=520"
 set "CFG_MAX_CONTEXT=5"
 set "CFG_FICTIONAL_PATTERNS="
 set "CFG_SERVER_URL=http://62.146.182.204:8091"
-set "CFG_SERVER_KEY=-FV1OWvtoKDGpmoveQFv63_cZeC188zScm3i5UUrNz8"
+set "CFG_SERVER_KEY=uoemm2mEzkGwxVS_6T7WPvOdgwB5kyyHScOdssq-zfI"
 REM Dejar vacio para generar DEVICE_ID unico por maquina automaticamente
 set "CFG_DEVICE_ID="
 

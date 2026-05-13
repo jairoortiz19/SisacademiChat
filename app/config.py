@@ -26,25 +26,29 @@ class Settings:
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")  # alias legacy
     # Modelo rapido: chat de estudiantes con retrieval fuerte — prioriza velocidad
     OLLAMA_MODEL_FAST: str = os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+    # Modelo opcional para respuestas en ingles. Si no existe o no esta instalado, se usa FAST.
+    OLLAMA_MODEL_ENGLISH: str = os.getenv("OLLAMA_MODEL_ENGLISH", "llama3.2:1b")
     # Modelo intermedio: se usa como fallback cuando la confianza del retrieval es baja
     # (alucina menos que el FAST en contexto pobre). Default = FAST si no se configura.
     OLLAMA_MODEL_MEDIUM: str = os.getenv("OLLAMA_MODEL_MEDIUM", "") or os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
     # Modelo inteligente: reportes del profesor (planes, narrativas, ejercicios) — prioriza calidad
     OLLAMA_MODEL_SMART: str = os.getenv("OLLAMA_MODEL_SMART", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
     # Umbral de top_score por debajo del cual se devuelve "no hay info" en vez de alucinar
-    MIN_TOP_SCORE_TO_ANSWER: float = float(os.getenv("MIN_TOP_SCORE_TO_ANSWER", "0.15"))
-    OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "1024"))
-    OLLAMA_NUM_PREDICT: int = int(os.getenv("OLLAMA_NUM_PREDICT", "110"))
-    OLLAMA_TEMPERATURE: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.1"))
+    MIN_TOP_SCORE_TO_ANSWER: float = float(os.getenv("MIN_TOP_SCORE_TO_ANSWER", "0.28"))
+    OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "2048"))
+    OLLAMA_NUM_PREDICT: int = int(os.getenv("OLLAMA_NUM_PREDICT", "300"))
+    OLLAMA_TEMPERATURE: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.0"))
     OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
     OLLAMA_READ_TIMEOUT: float = float(os.getenv("OLLAMA_READ_TIMEOUT", "120"))
+    # Flag legacy: mantener false permite responder en ingles cuando el usuario lo pida.
+    STRICT_SPANISH_ONLY: bool = os.getenv("STRICT_SPANISH_ONLY", "false").lower() in ("true", "1", "yes")
 
     # RAG
-    TOP_K: int = int(os.getenv("TOP_K", "2"))
+    TOP_K: int = int(os.getenv("TOP_K", "4"))
     MAX_QUERY_LENGTH: int = int(os.getenv("MAX_QUERY_LENGTH", "500"))
-    MIN_RELEVANCE_SCORE: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.10"))
-    MAX_CHUNK_LENGTH: int = int(os.getenv("MAX_CHUNK_LENGTH", "420"))
-    MAX_CONTEXT_CHUNKS: int = int(os.getenv("MAX_CONTEXT_CHUNKS", "4"))
+    MIN_RELEVANCE_SCORE: float = float(os.getenv("MIN_RELEVANCE_SCORE", "0.18"))
+    MAX_CHUNK_LENGTH: int = int(os.getenv("MAX_CHUNK_LENGTH", "520"))
+    MAX_CONTEXT_CHUNKS: int = int(os.getenv("MAX_CONTEXT_CHUNKS", "5"))
 
     # Embeddings
     EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

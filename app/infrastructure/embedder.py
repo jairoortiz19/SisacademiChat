@@ -34,6 +34,14 @@ async def embed_query_async(text: str) -> list[float]:
 
 
 def warmup():
-    """Pre-carga el modelo para evitar latencia en la primera consulta."""
-    _get_model()
-    logger.info("Modelo de embeddings listo")
+    """Pre-carga el modelo Y ejecuta un embed dummy para evitar latencia en la primera consulta.
+
+    Sin el embed dummy, la primera consulta real paga 2-3s extra de inicializacion JIT.
+    """
+    model = _get_model()
+    try:
+        # Embed real corto: dispara la inicializacion completa (tokenizer, ONNX, etc.)
+        list(model.embed(["warmup"]))
+        logger.info("Modelo de embeddings listo (warmup completo)")
+    except Exception as exc:
+        logger.warning("Warmup parcial del embedder: %s", exc)

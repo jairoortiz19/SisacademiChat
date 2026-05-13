@@ -8,10 +8,13 @@ El sistema utiliza modelos locales (**Ollama**) para privacidad y eficiencia, y 
 
 * **Chat Educativo Local**: Respuestas generadas localmente usando LLMs (sin depender de internet para la inferencia).
 * **RAG (Retrieval-Augmented Generation)**: Respuestas basadas *unicamente* en documentos proporcionados (PDFs, guias, libros).
-* **Cache de Respuestas**: Preguntas repetidas se responden instantaneamente sin invocar el LLM.
+* **Anti-alucinacion en capas**: Umbral de retrieval, grounding check post-respuesta, filtro off-topic y prompt estricto evitan que el modelo invente.
+* **Memoria conversacional**: Mantiene continuidad entre turnos usando `conversation_id` (auto-recuperada desde logs) o historial explicito en el request.
+* **Doble modelo (ES/EN)**: Routing automatico — `qwen2.5:1.5b` para espanol, `llama3.2:1b` para ingles.
+* **Cache de Respuestas**: Preguntas repetidas (incluyendo NO_INFO) se responden instantaneamente sin invocar el LLM.
 * **Alta Confiabilidad**: Retry automatico y circuit breaker para Ollama.
 * **Sincronizacion Inteligente**:
-    * Descarga de bases de conocimiento gestionadas centralmente.
+    * Descarga de bases de conocimiento gestionadas centralmente (con invalidacion automatica de cache).
     * Subida de logs y metricas de uso anonimas.
 * **Stack Eficiente**: Python, FastAPI, SQLite (Vector Search), Ollama.
 * **Instalacion Automatica**: Scripts resilientes que descargan e instalan todo automaticamente.
@@ -50,7 +53,7 @@ run.bat
 `run.bat` es el unico script necesario. Detecta automaticamente que falta y lo instala:
 
 1. Instala **Ollama** si no esta presente
-2. Inicia Ollama y descarga el modelo LLM liviano (`qwen2.5:0.5b`)
+2. Inicia Ollama y descarga los modelos LLM (`qwen2.5:1.5b` ES + `llama3.2:1b` EN)
 3. Descarga **Python 3.12 embebido** (portable, no requiere instalacion en el sistema)
 4. Instala **pip** y todas las dependencias
 5. Inicializa las bases de datos SQLite y el modelo de embeddings (~46MB)
@@ -63,7 +66,7 @@ Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si alg
 
 ### Instalacion manual
 
-1. Instalar [Ollama](https://ollama.com) y ejecutar: `ollama pull qwen2.5:0.5b`
+1. Instalar [Ollama](https://ollama.com) y ejecutar: `ollama pull qwen2.5:1.5b && ollama pull llama3.2:1b`
 2. Instalar Python 3.12+
 3. Instalar dependencias:
     ```bash
@@ -116,30 +119,32 @@ Todas las opciones se configuran en `config.env`:
 | Variable | Default | Descripcion |
 |---|---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | URL de Ollama |
-| `OLLAMA_MODEL` | `qwen2.5:0.5b` | Modelo base (usado si no se definen los especificos) |
-| `OLLAMA_MODEL_FAST` | (= `OLLAMA_MODEL`) | Chat de estudiantes: prioriza velocidad |
-| `OLLAMA_MODEL_MEDIUM` | (= `OLLAMA_MODEL_FAST`) | Fallback liviano cuando el retrieval es debil |
-| `OLLAMA_MODEL_SMART` | (= `OLLAMA_MODEL`) | Reportes del profesor: prioriza calidad |
+| `OLLAMA_MODEL` | `qwen2.5:1.5b` | Modelo base (usado si no se definen los especificos) |
+| `OLLAMA_MODEL_FAST` | `qwen2.5:1.5b` | Chat de estudiantes en espanol |
+| `OLLAMA_MODEL_ENGLISH` | `llama3.2:1b` | Chat de estudiantes en ingles. Si falta, cae a `OLLAMA_MODEL_FAST` |
+| `OLLAMA_MODEL_MEDIUM` | `qwen2.5:1.5b` | Fallback cuando el retrieval es debil |
+| `OLLAMA_MODEL_SMART` | `qwen2.5:1.5b` | Reportes del profesor (subir a `qwen2.5:3b` si hay RAM) |
+| `STRICT_SPANISH_ONLY` | `false` | Si `true`, fuerza espanol e ignora deteccion EN. Util solo con modelos pequenos que mezclan idiomas |
 
 ### Rendimiento de Ollama
 
 | Variable | Default | Descripcion |
 |---|---|---|
-| `OLLAMA_NUM_CTX` | `1024` | Ventana de contexto del LLM (tokens). Reducir = mas rapido |
-| `OLLAMA_NUM_PREDICT` | `110` | Maximo de tokens de salida. Limita largo de respuesta |
-| `OLLAMA_TEMPERATURE` | `0.1` | Temperatura de sampling. Menor = mas rapido y determinista |
+| `OLLAMA_NUM_CTX` | `2048` | Ventana de contexto del LLM (tokens). Reducir = mas rapido |
+| `OLLAMA_NUM_PREDICT` | `300` | Maximo de tokens de salida. ~220 palabras, suficiente para respuestas educativas |
+| `OLLAMA_TEMPERATURE` | `0.0` | Temperatura de sampling. `0.0` = totalmente determinista, anti-alucinacion |
 | `OLLAMA_KEEP_ALIVE` | `10m` | Tiempo que el modelo se mantiene cargado en RAM |
 
 ### RAG
 
 | Variable | Default | Descripcion |
 |---|---|---|
-| `TOP_K` | `2` | Cantidad de fragmentos a recuperar de la base de conocimiento |
+| `TOP_K` | `4` | Cantidad de fragmentos a recuperar de la base de conocimiento |
 | `MAX_QUERY_LENGTH` | `500` | Longitud maxima de la pregunta (caracteres) |
-| `MIN_RELEVANCE_SCORE` | `0.10` | Score minimo de relevancia para incluir un fragmento |
-| `MIN_TOP_SCORE_TO_ANSWER` | `0.15` | Score minimo del mejor fragmento; si es menor, responde "no hay info" sin invocar el LLM |
-| `MAX_CHUNK_LENGTH` | `420` | Longitud maxima de cada fragmento enviado al LLM |
-| `MAX_CONTEXT_CHUNKS` | `4` | Maximo de fragmentos enviados como contexto al LLM |
+| `MIN_RELEVANCE_SCORE` | `0.18` | Score minimo de relevancia para incluir un fragmento |
+| `MIN_TOP_SCORE_TO_ANSWER` | `0.28` | Score minimo del mejor fragmento; si es menor (o el promedio < 60% del umbral), responde "no hay info" sin invocar el LLM |
+| `MAX_CHUNK_LENGTH` | `520` | Longitud maxima de cada fragmento enviado al LLM |
+| `MAX_CONTEXT_CHUNKS` | `5` | Maximo de fragmentos enviados como contexto al LLM |
 | `FICTIONAL_SOURCE_PATTERNS` | (vacio) | Patrones de nombres de fuente a tratar como ficticias (separados por coma, p.ej. `cuento,pepita`) |
 
 ### Cache de Respuestas
@@ -157,19 +162,62 @@ Todas las opciones se configuran en `config.env`:
 | `SERVER_API_KEY` | (vacio) | API Key del servidor central |
 | `DEVICE_ID` | (auto-generado) | Identificador unico del dispositivo |
 
-### Configuracion recomendada para hardware limitado
+### Configuracion recomendada por hardware
 
-Si el equipo tiene poca RAM o CPU lenta, ajustar en `config.env`:
+**Equipos modestos (i3 / 4 GB RAM)** — prioriza velocidad sobre calidad:
 
 ```env
-OLLAMA_MODEL=qwen2.5:0.5b # Modelo recomendado para i3/8GB
-OLLAMA_NUM_CTX=1024       # Reduce uso de RAM del modelo
-OLLAMA_NUM_PREDICT=110    # Respuestas mas cortas y rapidas
-TOP_K=2                   # Menos fragmentos comparados
-MAX_CHUNK_LENGTH=420      # Menos tokens enviados al LLM
-MAX_CONTEXT_CHUNKS=4      # Contexto compacto desde knowledge.db
-OLLAMA_KEEP_ALIVE=10m     # Mantiene qwen2.5:0.5b caliente sin ocupar mucho
+OLLAMA_MODEL=qwen2.5:0.5b
+OLLAMA_MODEL_FAST=qwen2.5:0.5b
+OLLAMA_MODEL_SMART=qwen2.5:0.5b
+STRICT_SPANISH_ONLY=true   # qwen 0.5b mezcla idiomas, mejor forzar espanol
+OLLAMA_NUM_CTX=1024
+OLLAMA_NUM_PREDICT=200
+TOP_K=2
+MAX_CHUNK_LENGTH=420
+MAX_CONTEXT_CHUNKS=3
 ```
+
+**Equipos normales (i5 / 8 GB RAM)** — defaults actuales (qwen2.5:1.5b + llama3.2:1b).
+
+**Equipos con buena RAM (i7 / 16 GB+)** — sube calidad sin tocar velocidad mucho:
+
+```env
+OLLAMA_MODEL=qwen2.5:1.5b
+OLLAMA_MODEL_FAST=qwen2.5:1.5b
+OLLAMA_MODEL_SMART=qwen2.5:3b   # mejor calidad para reportes del profesor
+OLLAMA_NUM_CTX=4096
+OLLAMA_NUM_PREDICT=400
+TOP_K=5
+MAX_CONTEXT_CHUNKS=6
+```
+
+## Defensas Anti-Alucinacion
+
+El sistema combina **6 capas** para minimizar invenciones del LLM:
+
+1. **Pre-filtro off-topic**: Detecta preguntas claramente fuera del scope educativo (chistes, clima, jailbreaks tipo "ignora tus instrucciones") antes de tocar Ollama. Respuesta NO_INFO instantanea.
+2. **Umbral de retrieval**: Si el mejor chunk recuperado tiene score `< MIN_TOP_SCORE_TO_ANSWER` o el promedio de los top chunks es muy bajo, responde NO_INFO sin invocar el LLM.
+3. **Filtro de fuentes ficticias**: Cuentos y narrativa no se usan para preguntas factuales (configurable con `FICTIONAL_SOURCE_PATTERNS`).
+4. **Prompt estricto**: System prompt prohibe explicitamente inventar, usar conocimiento general o completar vacios. Frase canonica fija para "no se".
+5. **Stop sequences**: 13 patrones (`\nPregunta:`, `\nNota:`, etc.) cortan la generacion si el modelo intenta divagar.
+6. **Grounding check post-respuesta**: Verifica que las palabras clave de la respuesta aparezcan literalmente en el contexto recuperado. Si el overlap es < 35%, reemplaza por NO_INFO.
+
+### Memoria conversacional
+
+El cliente puede mandar un campo opcional `history` en el `POST /chat`:
+
+```json
+{
+  "message": "y por que pasa eso?",
+  "conversation_id": "abc-123",
+  "history": [
+    {"question": "que es la fotosintesis?", "answer": "La fotosintesis es..."}
+  ]
+}
+```
+
+Si `history` se omite pero `conversation_id` existe, el servidor reconstruye los ultimos 2 turnos automaticamente desde los logs.
 
 ## Arquitectura
 
@@ -190,9 +238,13 @@ HTTP Requests
 ### Pipeline RAG
 
 ```
-Pregunta --> Sanitizacion --> Cache hit? --> Respuesta instantanea
+Pregunta --> Sanitizacion --> Off-topic? --> NO_INFO instantaneo (sin LLM ni embedding)
+                                  |
+                               Cache hit? --> Respuesta instantanea
                                   |
                                Cache miss
+                                  |
+                   Cargar memoria conversacional (ultimos 2 turnos)
                                   |
                    Embedding (384d, asyncio.to_thread)
                                   |
@@ -201,14 +253,19 @@ Pregunta --> Sanitizacion --> Cache hit? --> Respuesta instantanea
                    Filtrado por relevancia (MIN_RELEVANCE_SCORE)
                    Filtro de fuentes ficticias (FICTIONAL_SOURCE_PATTERNS)
                                   |
-              Sin chunks? --> Respuesta directa (sin LLM)
+              Sin chunks? --> NO_INFO (sin LLM)  [cacheado]
                                   |
-          Confianza baja? (MIN_TOP_SCORE_TO_ANSWER) --> "No hay info" (sin LLM)
+          Top score O promedio < umbral? --> NO_INFO (sin LLM)  [cacheado]
                                   |
-                         Contexto al LLM (Ollama)
-                         [retry + circuit breaker]
+                         Contexto + historial al LLM (Ollama)
+                         [stop sequences + retry + circuit breaker]
                                   |
-                    Respuesta en espanol (streaming)
+                  Verificacion / reescritura (deliberate mode)
+                                  |
+            Grounding check: ¿overlap respuesta vs contexto >= 35%?
+                  No --> reemplazar por NO_INFO  [cacheado]
+                                  |
+                    Streaming de la respuesta final
                                   |
                     Log en background + Guardar en cache
 ```
@@ -306,7 +363,9 @@ Documentacion interactiva disponible en: `http://127.0.0.1:8090/docs`
 | Puerto ocupado | Usa `stop.bat` o elige otro puerto en `run.bat` |
 | Respuestas lentas | Reduce `TOP_K`, `OLLAMA_NUM_CTX` o `MAX_CHUNK_LENGTH` en `config.env` |
 | Respuestas cortadas | Aumenta `OLLAMA_NUM_PREDICT` en `config.env` |
-| Respuestas no relevantes | Ajusta `MIN_RELEVANCE_SCORE` (mayor = mas estricto) |
+| Respuestas no relevantes | Ajusta `MIN_RELEVANCE_SCORE` o `MIN_TOP_SCORE_TO_ANSWER` (mayores = mas estricto) |
+| Demasiados "no encontre informacion" | Baja `MIN_TOP_SCORE_TO_ANSWER` (default 0.28). Si persiste, regenera la KB con chunks mas grandes |
+| El modelo mezcla espanol e ingles | Activa `STRICT_SPANISH_ONLY=true` |
 | ModuleNotFoundError | Ejecuta `run.bat` — reinstala dependencias automaticamente |
 | Base de conocimiento vacia | Configura `SERVER_URL` y ejecuta sync desde la API o `run.bat` |
 

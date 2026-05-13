@@ -41,14 +41,23 @@ async def lifespan(app: FastAPI):
     ollama_available, installed_models = await ollama_client.check_models_status()
     if ollama_available:
         fast = settings.OLLAMA_MODEL_FAST
+        english = settings.OLLAMA_MODEL_ENGLISH
         smart = settings.OLLAMA_MODEL_SMART
         fast_ok = any(fast in m for m in installed_models)
+        english_ok = any(english in m for m in installed_models)
         smart_ok = any(smart in m for m in installed_models)
 
         if fast_ok:
             logger.info("Modelo rapido (chat):     '%s' OK", fast)
         else:
             logger.warning("Modelo rapido (chat):     '%s' NO encontrado — ejecuta: ollama pull %s", fast, fast)
+
+        if english == fast:
+            logger.info("Modelo ingles (chat):     mismo que rapido ('%s')", english)
+        elif english_ok:
+            logger.info("Modelo ingles (chat):     '%s' OK", english)
+        else:
+            logger.warning("Modelo ingles (chat):     '%s' NO encontrado - ejecuta: ollama pull %s", english, english)
 
         if smart == fast:
             logger.info("Modelo inteligente (prof): mismo que rapido ('%s')", smart)

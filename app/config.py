@@ -67,6 +67,12 @@ class Settings:
     SERVER_API_KEY: str = os.getenv("SERVER_API_KEY", "")
     DEVICE_ID: str = os.getenv("DEVICE_ID", "")
 
+    # Sincronizacion automatica en segundo plano (si SERVER_URL esta configurado).
+    # Envia logs de uso al servidor y baja la base de conocimiento periodicamente.
+    ENABLE_REMOTE_SYNC: bool = os.getenv("ENABLE_REMOTE_SYNC", "true").strip().lower() not in ("false", "0", "no", "off")
+    SYNC_LOGS_INTERVAL_MIN: int = int(os.getenv("SYNC_LOGS_INTERVAL_MIN", "15"))        # envia logs cada 15 min
+    SYNC_KNOWLEDGE_INTERVAL_MIN: int = int(os.getenv("SYNC_KNOWLEDGE_INTERVAL_MIN", "360"))  # baja KB cada 6 h
+
     # Bases de datos
     KNOWLEDGE_DB: Path = DATA_DIR / "knowledge.db"
     LOGS_DB: Path = DATA_DIR / "logs.db"

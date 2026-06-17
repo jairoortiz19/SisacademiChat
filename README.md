@@ -10,7 +10,7 @@ El sistema utiliza modelos locales (**Ollama**) para privacidad y eficiencia, y 
 * **RAG (Retrieval-Augmented Generation)**: Respuestas basadas *unicamente* en documentos proporcionados (PDFs, guias, libros).
 * **Anti-alucinacion en capas**: Umbral de retrieval, grounding check post-respuesta, filtro off-topic y prompt estricto evitan que el modelo invente.
 * **Memoria conversacional**: Mantiene continuidad entre turnos usando `conversation_id` (auto-recuperada desde logs) o historial explicito en el request.
-* **Doble modelo (ES/EN)**: Routing automatico — `qwen2.5:1.5b` para espanol, `llama3.2:1b` para ingles.
+* **Modelo unico (ES/EN)**: `qwen2.5:1.5b` (multilingue) para todas las preguntas, espanol e ingles.
 * **Cache de Respuestas**: Preguntas repetidas (incluyendo NO_INFO) se responden instantaneamente sin invocar el LLM.
 * **Alta Confiabilidad**: Retry automatico y circuit breaker para Ollama.
 * **Sincronizacion Inteligente**:
@@ -53,7 +53,7 @@ run.bat
 `run.bat` es el unico script necesario. Detecta automaticamente que falta y lo instala:
 
 1. Instala **Ollama** si no esta presente
-2. Inicia Ollama y descarga los modelos LLM (`qwen2.5:1.5b` ES + `llama3.2:1b` EN)
+2. Inicia Ollama y descarga el modelo LLM (`qwen2.5:1.5b`)
 3. Descarga **Python 3.12 embebido** (portable, no requiere instalacion en el sistema)
 4. Instala **pip** y todas las dependencias
 5. Inicializa las bases de datos SQLite y el modelo de embeddings (~46MB)
@@ -66,7 +66,7 @@ Todas las descargas tienen **reintentos automaticos** (hasta 3 intentos). Si alg
 
 ### Instalacion manual
 
-1. Instalar [Ollama](https://ollama.com) y ejecutar: `ollama pull qwen2.5:1.5b && ollama pull llama3.2:1b`
+1. Instalar [Ollama](https://ollama.com) y ejecutar: `ollama pull qwen2.5:1.5b`
 2. Instalar Python 3.12+
 3. Instalar dependencias:
     ```bash
@@ -123,7 +123,7 @@ Todas las opciones se configuran en `config.env`:
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | URL de Ollama |
 | `OLLAMA_MODEL` | `qwen2.5:1.5b` | Modelo base (usado si no se definen los especificos) |
 | `OLLAMA_MODEL_FAST` | `qwen2.5:1.5b` | Chat de estudiantes en espanol |
-| `OLLAMA_MODEL_ENGLISH` | `llama3.2:1b` | Chat de estudiantes en ingles. Si falta, cae a `OLLAMA_MODEL_FAST` |
+| `OLLAMA_MODEL_ENGLISH` | `qwen2.5:1.5b` | Chat en ingles (mismo modelo multilingue). Si falta, cae a `OLLAMA_MODEL_FAST` |
 | `OLLAMA_MODEL_MEDIUM` | `qwen2.5:1.5b` | Fallback cuando el retrieval es debil |
 | `OLLAMA_MODEL_SMART` | `qwen2.5:1.5b` | Reportes del profesor (subir a `qwen2.5:3b` si hay RAM) |
 | `STRICT_SPANISH_ONLY` | `false` | Si `true`, fuerza espanol e ignora deteccion EN. Util solo con modelos pequenos que mezclan idiomas |
@@ -166,13 +166,9 @@ Todas las opciones se configuran en `config.env`:
 
 ### Configuracion recomendada por hardware
 
-**Equipos modestos (i3 / 4 GB RAM)** — prioriza velocidad sobre calidad:
+**Equipos modestos (i3 / 4 GB RAM)** — mismo modelo unico (`qwen2.5:1.5b`), reduce contexto/tokens:
 
 ```env
-OLLAMA_MODEL=qwen2.5:0.5b
-OLLAMA_MODEL_FAST=qwen2.5:0.5b
-OLLAMA_MODEL_SMART=qwen2.5:0.5b
-STRICT_SPANISH_ONLY=true   # qwen 0.5b mezcla idiomas, mejor forzar espanol
 OLLAMA_NUM_CTX=1024
 OLLAMA_NUM_PREDICT=200
 TOP_K=2
@@ -180,7 +176,10 @@ MAX_CHUNK_LENGTH=420
 MAX_CONTEXT_CHUNKS=3
 ```
 
-**Equipos normales (i5 / 8 GB RAM)** — defaults actuales (qwen2.5:1.5b + llama3.2:1b).
+> Si el hardware es muy limitado puedes bajar manualmente a un modelo mas pequeno
+> (`ollama pull qwen2.5:0.5b` y ponerlo en `config.env`); el paquete solo trae `qwen2.5:1.5b`.
+
+**Equipos normales (i5 / 8 GB RAM)** — default actual (qwen2.5:1.5b, modelo unico).
 
 **Equipos con buena RAM (i7 / 16 GB+)** — sube calidad sin tocar velocidad mucho:
 

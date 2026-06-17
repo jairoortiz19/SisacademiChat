@@ -23,16 +23,16 @@ class Settings:
 
     # Ollama
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")  # alias legacy
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")  # alias legacy
     # Modelo rapido: chat de estudiantes con retrieval fuerte — prioriza velocidad
-    OLLAMA_MODEL_FAST: str = os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+    OLLAMA_MODEL_FAST: str = os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     # Modelo opcional para respuestas en ingles. Si no existe o no esta instalado, se usa FAST.
-    OLLAMA_MODEL_ENGLISH: str = os.getenv("OLLAMA_MODEL_ENGLISH", "llama3.2:1b")
+    OLLAMA_MODEL_ENGLISH: str = os.getenv("OLLAMA_MODEL_ENGLISH", "qwen2.5:1.5b")
     # Modelo intermedio: se usa como fallback cuando la confianza del retrieval es baja
     # (alucina menos que el FAST en contexto pobre). Default = FAST si no se configura.
-    OLLAMA_MODEL_MEDIUM: str = os.getenv("OLLAMA_MODEL_MEDIUM", "") or os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+    OLLAMA_MODEL_MEDIUM: str = os.getenv("OLLAMA_MODEL_MEDIUM", "") or os.getenv("OLLAMA_MODEL_FAST", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     # Modelo inteligente: reportes del profesor (planes, narrativas, ejercicios) — prioriza calidad
-    OLLAMA_MODEL_SMART: str = os.getenv("OLLAMA_MODEL_SMART", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+    OLLAMA_MODEL_SMART: str = os.getenv("OLLAMA_MODEL_SMART", "") or os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     # Umbral de top_score por debajo del cual se devuelve "no hay info" en vez de alucinar
     MIN_TOP_SCORE_TO_ANSWER: float = float(os.getenv("MIN_TOP_SCORE_TO_ANSWER", "0.28"))
     OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "2048"))

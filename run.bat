@@ -15,7 +15,7 @@ set "PORT=8090"
 set "HOST=127.0.0.1"
 set "OLLAMA_MODEL=qwen2.5:1.5b"
 set "OLLAMA_MODEL_FAST=qwen2.5:1.5b"
-set "OLLAMA_MODEL_ENGLISH=llama3.2:1b"
+set "OLLAMA_MODEL_ENGLISH=qwen2.5:1.5b"
 set "OLLAMA_MODEL_MEDIUM=qwen2.5:1.5b"
 set "OLLAMA_MODEL_SMART=qwen2.5:1.5b"
 

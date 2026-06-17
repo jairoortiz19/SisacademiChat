@@ -15,10 +15,9 @@ set "CFG_HOST=127.0.0.1"
 set "CFG_API_KEY=uoemm2mEzkGwxVS_6T7WPvOdgwB5kyyHScOdssq-zfI"
 set "CFG_RATE_LIMIT=30"
 set "CFG_OLLAMA_URL=http://localhost:11434"
-REM Modelos: qwen2.5:1.5b para espanol (multilingue, fuerte en ES),
-REM llama3.2:1b para ingles (nativo en EN). Routing automatico por idioma de la pregunta.
+REM Modelo unico: qwen2.5:1.5b (multilingue, ES/EN) para todas las tareas.
 set "CFG_OLLAMA_MODEL=qwen2.5:1.5b"
-set "CFG_OLLAMA_MODEL_ENGLISH=llama3.2:1b"
+set "CFG_OLLAMA_MODEL_ENGLISH=qwen2.5:1.5b"
 set "CFG_NUM_CTX=2048"
 set "CFG_NUM_PREDICT=300"
 set "CFG_TEMPERATURE=0.0"

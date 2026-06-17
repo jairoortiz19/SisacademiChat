@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends
@@ -21,6 +23,32 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("sisacademichat")
+
+
+async def _periodic_sync():
+    """Tarea en segundo plano: envia logs de uso al servidor central y baja la base
+    de conocimiento periodicamente. Solo corre si SERVER_URL esta configurado."""
+    from app.services import sync_service
+
+    logs_interval = max(60, settings.SYNC_LOGS_INTERVAL_MIN * 60)
+    kb_interval = max(300, settings.SYNC_KNOWLEDGE_INTERVAL_MIN * 60)
+    last_kb = time.monotonic()  # la KB ya se sincroniza al instalar; la primera aqui es tras kb_interval
+
+    await asyncio.sleep(30)  # dejar que el servicio termine de levantar
+    while True:
+        try:
+            result = await sync_service.sync_logs()
+            if result.get("synced"):
+                logger.info("Sync logs -> %s", result.get("message"))
+            if (time.monotonic() - last_kb) >= kb_interval:
+                kb = await sync_service.sync_knowledge_base()
+                logger.info("Sync KB -> %s", kb.get("message") or kb.get("status"))
+                last_kb = time.monotonic()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Ciclo de sincronizacion fallo (se reintenta luego): %s", exc)
+        await asyncio.sleep(logs_interval)
 
 
 @asynccontextmanager
@@ -79,10 +107,20 @@ async def lifespan(app: FastAPI):
         stats["total_sources"],
     )
 
+    sync_task = None
     if settings.SERVER_URL:
         logger.info("Servidor central: %s", settings.SERVER_URL)
+        if settings.ENABLE_REMOTE_SYNC:
+            sync_task = asyncio.create_task(_periodic_sync())
+            logger.info(
+                "Sync automatico ACTIVO: logs cada %d min, base de conocimiento cada %d min.",
+                settings.SYNC_LOGS_INTERVAL_MIN,
+                settings.SYNC_KNOWLEDGE_INTERVAL_MIN,
+            )
+        else:
+            logger.info("Sync automatico desactivado (ENABLE_REMOTE_SYNC=false).")
     else:
-        logger.info("Servidor central: no configurado (SERVER_URL vacio)")
+        logger.info("Servidor central: no configurado (SERVER_URL vacio). Sin sync automatico.")
 
     logger.info(
         "=== SisacademiChat listo en http://%s:%d ===",
@@ -93,6 +131,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # Limpieza
+    if sync_task:
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
     await ollama_client.close()
     logger.info("=== SisacademiChat detenido ===")
 

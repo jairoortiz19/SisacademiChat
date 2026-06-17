@@ -13,8 +13,7 @@
 | Software previo | Ninguno — el instalador descarga todo automaticamente |
 
 **Modelos descargados automaticamente:**
-- `qwen2.5:1.5b` (~1 GB) — chat de estudiantes en espanol
-- `llama3.2:1b` (~1.3 GB) — chat de estudiantes en ingles
+- `qwen2.5:1.5b` (~1 GB) — modelo unico multilingue (espanol e ingles)
 - `paraphrase-multilingual-MiniLM-L12-v2` (~46 MB) — embeddings vectoriales
 
 ---
@@ -103,9 +102,9 @@ Util cuando ya hay una maquina funcionando y quieres replicarla sin descargas:
 3. **Asegurarse de que Ollama este instalado** y los modelos descargados:
    ```cmd
    ollama list
-   REM Debe aparecer qwen2.5:1.5b y llama3.2:1b
+   REM Debe aparecer qwen2.5:1.5b
    ```
-   Si falta alguno: `ollama pull qwen2.5:1.5b` y `ollama pull llama3.2:1b`.
+   Si falta: `ollama pull qwen2.5:1.5b`.
 4. Ejecutar `run.bat`.
 
 ---
@@ -371,7 +370,7 @@ RATE_LIMIT_PER_MINUTE=30
 # Modelos LLM (Ollama) — routing automatico por idioma de la pregunta
 OLLAMA_MODEL=qwen2.5:1.5b           # base (multilingue, fuerte en espanol)
 OLLAMA_MODEL_FAST=qwen2.5:1.5b      # chat estudiantes (espanol)
-OLLAMA_MODEL_ENGLISH=llama3.2:1b    # chat estudiantes (ingles)
+OLLAMA_MODEL_ENGLISH=qwen2.5:1.5b   # chat estudiantes (ingles, mismo modelo)
 OLLAMA_MODEL_SMART=qwen2.5:1.5b     # reportes profesor (subir a qwen2.5:3b si hay RAM)
 
 # Anti-alucinacion

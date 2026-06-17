@@ -39,7 +39,7 @@ Verifica el estado del servicio. **No requiere autenticacion.**
 {
   "status": "ok",
   "ollama": "connected",
-  "ollama_model": "qwen2.5:0.5b",
+  "ollama_model": "qwen2.5:1.5b",
   "knowledge_chunks": 9332,
   "knowledge_sources": 109,
   "pending_logs": 0,

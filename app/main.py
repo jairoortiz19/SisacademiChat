@@ -57,6 +57,16 @@ async def lifespan(app: FastAPI):
     logger.info("=== SisacademiChat iniciando ===")
     logger.info("Device ID: %s", settings.DEVICE_ID)
 
+    # Bootstrap del instalador: si el paquete en C:\InstaladorSisacademi quedo sin .git
+    # (equipos instalados desde USB sin .git), lo engancha al repo para que pueda
+    # auto-actualizarse. Corre en un hilo aparte y es 100% fail-safe: nunca afecta al chat.
+    try:
+        from app.installer_bootstrap import bootstrap_installer_git
+
+        asyncio.create_task(asyncio.to_thread(bootstrap_installer_git))
+    except Exception as exc:  # pragma: no cover - jamas debe romper el arranque
+        logger.warning("Bootstrap del instalador no se pudo iniciar (se ignora): %s", exc)
+
     # Inicializar bases de datos
     init_all()
     logger.info("Bases de datos inicializadas")
